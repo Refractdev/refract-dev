@@ -9,8 +9,25 @@ const supabase = createClient(
 // ─── Gerar JWT para autenticar como GitHub App ────────────────────────────────
 
 function generateAppJWT(): string {
-  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY!.replace(/\\n/g, '\n')
-  const appId = process.env.GITHUB_APP_ID!
+  let privateKey = process.env.GITHUB_APP_PRIVATE_KEY
+  if (!privateKey) {
+    throw new Error('GITHUB_APP_PRIVATE_KEY environment variable is not defined')
+  }
+
+  // Strip wrapping quotes if present
+  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    privateKey = privateKey.slice(1, -1)
+  } else if (privateKey.startsWith("'") && privateKey.endsWith("'")) {
+    privateKey = privateKey.slice(1, -1)
+  }
+
+  // Replace literal backslash-n with actual newlines
+  privateKey = privateKey.replace(/\\n/g, '\n').replace(/\\r/g, '\r')
+
+  const appId = process.env.GITHUB_APP_ID
+  if (!appId) {
+    throw new Error('GITHUB_APP_ID environment variable is not defined')
+  }
 
   return jwt.sign(
     { iat: Math.floor(Date.now() / 1000) - 60, exp: Math.floor(Date.now() / 1000) + 540, iss: appId },

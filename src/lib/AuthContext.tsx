@@ -46,6 +46,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
+  const checkPendingInstallation = useCallback(async (userId: string, currentProfile: UserProfile): Promise<UserProfile> => {
+    const pendingId = localStorage.getItem('pending_installation_id')
+    if (!pendingId) return currentProfile
+
+    localStorage.removeItem('pending_installation_id')
+    try {
+      const { data: updatedProfile, error } = await supabase
+        .from('users')
+        .update({ github_installation_id: Number(pendingId) })
+        .eq('id', userId)
+        .select()
+        .single()
+
+      if (!error && updatedProfile) {
+        return updatedProfile as UserProfile
+      }
+    } catch (err) {
+      console.warn('[auth] failed to save pending installation id:', err)
+    }
+    return currentProfile
+  }, [])
+
   const fetchProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
     try {
       const { data, error } = await supabase
@@ -58,14 +80,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProfile(null)
         return null
       }
-      const nextProfile = data as UserProfile
+      let nextProfile = data as UserProfile
+      nextProfile = await checkPendingInstallation(userId, nextProfile)
       setProfile(nextProfile)
       return nextProfile
     } catch (e) {
       setProfile(null)
       return null
     }
-  }, [])
+  }, [checkPendingInstallation])
 
   const sessionRef = useRef<Session | null>(null)
   sessionRef.current = session
@@ -170,12 +193,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               .select('*')
               .eq('id', s.user.id)
               .single()
-            if (newProfile) setProfile(newProfile as UserProfile)
+            if (newProfile) {
+              const finalProfile = await checkPendingInstallation(s.user.id, newProfile as UserProfile)
+              setProfile(finalProfile)
+            }
           } else {
             setProfile(null)
           }
         } else {
-          setProfile(profileData as UserProfile)
+          const finalProfile = await checkPendingInstallation(s.user.id, profileData as UserProfile)
+          setProfile(finalProfile)
         }
       } else {
         setProfile(null)
@@ -198,7 +225,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       subscription.unsubscribe()
       clearTimeout(fallback)
     }
-  }, [fetchProfile])
+  }, [fetchProfile, checkPendingInstallation])
 
   return (
     <AuthContext.Provider value={{ session, profile, loading, refreshProfile, signOut, signIn, signUp, installGitHubApp }}>

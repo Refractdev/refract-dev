@@ -49,19 +49,7 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
   const [cloningRepoId, setCloningRepoId] = useState<number | null>(null)
   const [branchModal, setBranchModal] = useState<BranchModalState | null>(null)
 
-  useEffect(() => {
-    const pendingId = localStorage.getItem('pending_installation_id')
-    if (!pendingId || !profile?.id) return
-    localStorage.removeItem('pending_installation_id')
-    supabase
-      .from('users')
-      .update({ github_installation_id: Number(pendingId) })
-      .eq('id', profile.id)
-      .then(({ error }) => {
-        if (error) setError('Failed to save GitHub connection.')
-        else refreshProfile()
-      })
-  }, [profile?.id])
+
 
   const hasGitHubConnection = Boolean(profile?.github_installation_id || profile?.github_token)
 
