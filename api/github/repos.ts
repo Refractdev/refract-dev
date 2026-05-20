@@ -36,6 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isNotInstalled = err.message === 'GitHub App not installed'
     return res.status(isNotInstalled ? 403 : 500).json({
       error: err.message ?? 'Failed to fetch repos',
+      stack: err.stack ?? null,
     })
   }
 }
