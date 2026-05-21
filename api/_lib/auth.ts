@@ -18,9 +18,13 @@ async function generateAppJWT(): Promise<string> {
   const appId = process.env.GITHUB_APP_ID
   if (!appId) throw new Error('GITHUB_APP_ID not defined')
 
-  const privateKeyObj = await importPKCS8(privateKey, 'RS256')
-  const now = Math.floor(Date.now() / 1000)
+  // GitHub App keys são PKCS#1 — usa createPrivateKey do Node.js para converter
+  const { createPrivateKey } = await import('crypto')
+  const keyObject = createPrivateKey(privateKey)
+  const pkcs8 = keyObject.export({ type: 'pkcs8', format: 'pem' }) as string
+  const privateKeyObj = await importPKCS8(pkcs8, 'RS256')
 
+  const now = Math.floor(Date.now() / 1000)
   return new SignJWT({ iss: appId })
     .setProtectedHeader({ alg: 'RS256' })
     .setIssuedAt(now - 60)
