@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import jwt from 'jsonwebtoken'
+import { SignJWT } from 'jose'
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL!,
@@ -8,38 +8,37 @@ const supabase = createClient(
 
 // ─── Gerar JWT para autenticar como GitHub App ────────────────────────────────
 
-function generateAppJWT(): string {
+async function generateAppJWT(): Promise<string> {
   let privateKey = process.env.GITHUB_APP_PRIVATE_KEY
-  if (!privateKey) {
-    throw new Error('GITHUB_APP_PRIVATE_KEY environment variable is not defined')
-  }
-
-  // Strip wrapping quotes if present
-  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
-    privateKey = privateKey.slice(1, -1)
-  } else if (privateKey.startsWith("'") && privateKey.endsWith("'")) {
-    privateKey = privateKey.slice(1, -1)
-  }
-
-  // Replace literal backslash-n with actual newlines
+  if (!privateKey) throw new Error('GITHUB_APP_PRIVATE_KEY not defined')
+  
   privateKey = privateKey.replace(/\\n/g, '\n').replace(/\\r/g, '\r')
-
+  if (privateKey.startsWith('"')) privateKey = privateKey.slice(1, -1)
+  
   const appId = process.env.GITHUB_APP_ID
-  if (!appId) {
-    throw new Error('GITHUB_APP_ID environment variable is not defined')
-  }
+  if (!appId) throw new Error('GITHUB_APP_ID not defined')
 
-  return jwt.sign(
-    { iat: Math.floor(Date.now() / 1000) - 60, exp: Math.floor(Date.now() / 1000) + 540, iss: appId },
-    privateKey,
-    { algorithm: 'RS256' }
+  const pkcs8 = privateKey
+  const privateKeyObj = await crypto.subtle.importKey(
+    'pkcs8',
+    Buffer.from(pkcs8.replace(/-----BEGIN RSA PRIVATE KEY-----|-----END RSA PRIVATE KEY-----|\n/g, ''), 'base64'),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
   )
+
+  const now = Math.floor(Date.now() / 1000)
+  return new SignJWT({ iss: appId })
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuedAt(now - 60)
+    .setExpirationTime(now + 540)
+    .sign(privateKeyObj)
 }
 
 // ─── Gerar Installation Access Token ─────────────────────────────────────────
 
 export async function getInstallationToken(installationId: number): Promise<string> {
-  const appJWT = generateAppJWT()
+  const appJWT = await generateAppJWT()
 
   const res = await fetch(
     `https://api.github.com/app/installations/${installationId}/access_tokens`,
