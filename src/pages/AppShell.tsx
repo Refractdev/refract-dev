@@ -43,7 +43,7 @@ class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { ha
   }
 }
 
-export type Page = 'home' | 'projects' | 'repos' | 'guidelines' | 'settings' | 'projectView' | 'reports' | 'chat' | 'deals' | 'accounts' | 'competitors' | 'feedback' | 'review';
+export type Page = 'home' | 'projects' | 'repos' | 'guidelines' | 'settings' | 'projectView';
 
 export const AppShell: React.FC = () => {
   const { session, loading, profile, refreshProfile } = useAuth();
@@ -96,19 +96,9 @@ export const AppShell: React.FC = () => {
 
   const renderPage = () => {
     switch (activePage) {
-      case 'home':
-      case 'reports':
-      case 'chat':
-      case 'accounts':
-      case 'feedback':
-      case 'review':
-        return <HomePage onNavigate={handleNavigate} />;
-      case 'projects':
-      case 'deals':
-        return <ProjectsPage onOpenProject={(id) => handleNavigate('projectView', { projectId: id })} onNavigate={handleNavigate} />;
-      case 'repos':
-      case 'competitors':
-        return <ReposPage onNavigate={handleNavigate} />;
+      case 'home':        return <HomePage onNavigate={handleNavigate} />;
+      case 'projects':    return <ProjectsPage onOpenProject={(id) => handleNavigate('projectView', { projectId: id })} onNavigate={handleNavigate} />;
+      case 'repos':       return <ReposPage onNavigate={handleNavigate} />;
       case 'guidelines':  return <GuidelinesPage />;
       case 'settings':    return <SettingsPage />;
       case 'projectView': return <ProjectView projectId={activeProjectId} onBack={() => setActivePage('home')} />;

@@ -12,7 +12,7 @@ import {
 import { LogoMark } from './Logo';
 import { useAuth } from '../lib/AuthContext';
 
-export type Page = 'home' | 'projects' | 'repos' | 'guidelines' | 'settings' | 'projectView' | 'reports' | 'chat' | 'deals' | 'accounts' | 'competitors' | 'feedback' | 'review';
+export type Page = 'home' | 'projects' | 'repos' | 'guidelines' | 'settings' | 'projectView';
 
 interface SidebarProps {
   activePage: Page;

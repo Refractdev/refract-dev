@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { Session } from '@supabase/supabase-js'
-import { H } from 'highlight.run'
 import { supabase, UserProfile } from './supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -144,15 +143,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const url = `https://github.com/apps/refractdev/installations/new?state=${userId}`
     window.location.href = url
   }, [])
-
-  // Highlight identify
-  useEffect(() => {
-    if (!session?.user) return
-    H.identify(session.user.email ?? session.user.id, {
-      id: session.user.id,
-      plan: profile?.plan ?? 'free',
-    })
-  }, [session, profile?.plan])
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────
   useEffect(() => {

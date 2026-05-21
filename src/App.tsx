@@ -1,5 +1,4 @@
 import React from 'react';
-import { ErrorBoundary } from '@highlight-run/react';
 import { AppShell } from './pages/AppShell';
 import { FilesProvider } from './context/FilesContext';
 import { AuthProvider } from './lib/AuthContext';
@@ -12,14 +11,12 @@ import { ThemeProvider } from './lib/ThemeContext';
  */
 export const App: React.FC = () => {
   return (
-    <ErrorBoundary>
-      <AuthProvider>
-        <ThemeProvider>
-          <FilesProvider>
-            <AppShell />
-          </FilesProvider>
-        </ThemeProvider>
-      </AuthProvider>
-    </ErrorBoundary>
+    <AuthProvider>
+      <ThemeProvider>
+        <FilesProvider>
+          <AppShell />
+        </FilesProvider>
+      </ThemeProvider>
+    </AuthProvider>
   );
 };

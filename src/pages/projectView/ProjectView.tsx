@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { H } from 'highlight.run'
 import {
   GitBranch, Play, Layout, Code2, ZapOff,
   FileText, Eye, ChevronLeft, ChevronRight, Check, X,
@@ -309,15 +308,7 @@ const SuccessState: React.FC<{
       setPrUrl(response.url)
       window.open(response.url, '_blank', 'noopener,noreferrer')
     } catch (error) {
-      H.consumeError(
-        error as Error,
-        'Failed to create GitHub pull request',
-        {
-          feature: 'pull-request',
-          projectId: project?.id ?? 'unknown',
-          acceptedChanges: String(acceptedChanges.length),
-        }
-      )
+      console.error('Failed to create GitHub pull request:', error)
 
       if (error instanceof RateLimitError) {
         setPrError(error.message)
@@ -492,15 +483,7 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
          setIssueExplanation(explanation);
          setExplanationCache(prev => ({ ...prev, [issueId]: explanation }));
        } catch (err) {
-         H.consumeError(
-           err as Error,
-           'Failed to explain issue',
-           {
-             feature: 'analysis-explanation',
-             projectId: projectId ?? 'unknown',
-             issueId,
-           }
-         )
+         console.error('Failed to explain issue:', err)
          if (err instanceof RateLimitError) {
            setRequestError(err.message)
          }
@@ -528,16 +511,7 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
          setRequestError(null)
          updateIssueLines(currentIssue.id, newPatch)
        } catch (err) {
-         H.consumeError(
-           err as Error,
-           'Failed to auto-refactor issue',
-           {
-             feature: 'analysis-refactor',
-             projectId: projectId ?? 'unknown',
-             issueId: currentIssue.id,
-             fileCount: String(fileMap.size),
-           }
-         )
+         console.error('Failed to auto-refactor issue:', err)
          if (err instanceof RateLimitError) {
            setRequestError(err.message)
          }
@@ -692,15 +666,7 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
           setRequestError(null)
           setBriefingText(briefing ?? `Analisei ${analysisResult.scannedFiles.length} ficheiros e encontrei ${analysisResult.summary.total} problemas.`)
         } catch (err) {
-          H.consumeError(
-            err as Error,
-            'Failed to generate analysis briefing',
-            {
-              feature: 'analysis-briefing',
-              projectId: project?.id ?? 'unknown',
-              fileCount: String(analysisResult.scannedFiles.length),
-            }
-          )
+          console.error('Failed to generate analysis briefing:', err)
           if (err instanceof RateLimitError) {
             setRequestError(err.message)
           }
