@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { SignJWT } from 'jose'
+import { SignJWT, importPKCS8 } from 'jose'
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL!,
@@ -12,22 +12,15 @@ async function generateAppJWT(): Promise<string> {
   let privateKey = process.env.GITHUB_APP_PRIVATE_KEY
   if (!privateKey) throw new Error('GITHUB_APP_PRIVATE_KEY not defined')
   
-  privateKey = privateKey.replace(/\\n/g, '\n').replace(/\\r/g, '\r')
+  privateKey = privateKey.replace(/\\n/g, '\n')
   if (privateKey.startsWith('"')) privateKey = privateKey.slice(1, -1)
-  
+
   const appId = process.env.GITHUB_APP_ID
   if (!appId) throw new Error('GITHUB_APP_ID not defined')
 
-  const pkcs8 = privateKey
-  const privateKeyObj = await crypto.subtle.importKey(
-    'pkcs8',
-    Buffer.from(pkcs8.replace(/-----BEGIN RSA PRIVATE KEY-----|-----END RSA PRIVATE KEY-----|\n/g, ''), 'base64'),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-
+  const privateKeyObj = await importPKCS8(privateKey, 'RS256')
   const now = Math.floor(Date.now() / 1000)
+
   return new SignJWT({ iss: appId })
     .setProtectedHeader({ alg: 'RS256' })
     .setIssuedAt(now - 60)
