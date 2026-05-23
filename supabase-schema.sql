@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   onboarding_completed BOOLEAN NOT NULL DEFAULT false,
   language TEXT NOT NULL DEFAULT 'en',
   avatar_url TEXT,
+  github_installation_id BIGINT,
   github_token TEXT,
   stripe_customer_id TEXT,
   stripe_subscription_id TEXT,
@@ -25,7 +26,8 @@ CREATE TABLE IF NOT EXISTS projects (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  storage_id TEXT, -- Reference to Supabase Storage
+  storage_id TEXT,
+  path TEXT,
   repo TEXT,
   branch TEXT DEFAULT 'main',
   status TEXT DEFAULT 'Not analysed',
