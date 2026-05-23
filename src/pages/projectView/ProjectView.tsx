@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   GitBranch, Play, Layout, Code2, ZapOff,
-  FileText, Eye, ChevronLeft, ChevronRight, Check, X,
-  Settings2, CheckCircle2, ArrowLeft, Download, Folder,
-  File as FileIcon, CheckCheck, Sparkles
+  FileText, ChevronLeft, ChevronRight, Check, X,
+  CheckCircle2, ArrowLeft, Download, Folder,
+  File as FileIcon
 } from 'lucide-react'
 import { Project, AnalysisResult, IssueCategory, AnalysisIssue } from '../../shared/types'
-import { CodeMap } from './CodeMap'
 import { LogoMark } from '../../components/Logo'
-import type { DiffLine, Phase, Decision } from './types'
-import { getProject, saveDecision, getDecisionHistory, saveHealthSnapshot } from '../../lib/db'
-import { explainIssue, refactorIssue, generateBriefing, createGitHubPullRequest, RateLimitError } from '../../lib/api'
+import type { Phase, Decision } from './types'
+import { getProject, saveDecision, getDecisionHistory } from '../../lib/db'
+import { explainIssue, refactorIssue, generateBriefing, RateLimitError } from '../../lib/api'
 import { useFiles } from '../../context/FilesContext'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -67,22 +66,6 @@ const ImpactBadge: React.FC<{ level: 'High' | 'Medium' | 'Low' }> = ({ level }) 
   )
 }
 
-const DiffLineRow: React.FC<DiffLine> = ({ num, content, type }) => {
-  const bg = type === 'removed' ? 'rgba(255,255,255,0.05)' : type === 'added' ? 'rgba(255,255,255,0.1)' : 'transparent'
-  const color = type === 'removed' ? '#aaaaaa' : type === 'added' ? '#ffffff' : C.muted
-  const bl = type === 'removed' ? `2px solid #666666` : type === 'added' ? `2px solid #ffffff` : '2px solid transparent'
-  return (
-    <div style={{ display: 'flex', background: bg, borderLeft: bl, minHeight: 22 }}>
-      <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: C.subtle, minWidth: 28, textAlign: 'right', paddingRight: 12, paddingLeft: 4, userSelect: 'none', lineHeight: '22px', flexShrink: 0 }}>
-        {num}
-      </span>
-      <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, color, lineHeight: '22px', whiteSpace: 'pre', paddingRight: 16 }}>
-        {content || ' '}
-      </span>
-    </div>
-  )
-}
-
 const normalizeProjectPath = (path: string) => path.replace(/\\/g, '/').replace(/^\/+/, '')
 
 const getFileContentForIssue = (filePath: string, fileMap: Map<string, string>) => {
@@ -96,55 +79,6 @@ const getFileContentForIssue = (filePath: string, fileMap: Map<string, string>) 
   }
 
   return null
-}
-
-const buildPullRequestChanges = (
-  issues: AnalysisIssue[],
-  decisions: Record<string, Decision>,
-  fileMap: Map<string, string>
-) => {
-  const acceptedIssues = issues.filter((issue) => {
-    const afterContent = issue.patch?.after ?? issue.lines.after.join('\n')
-    return decisions[issue.id] === 'accepted' && afterContent.trim().length > 0
-  })
-
-  const latestContents = new Map<string, string>(
-    Array.from(fileMap.entries()).map(([path, content]) => [normalizeProjectPath(path), content])
-  )
-  const changedFiles = new Map<string, string>()
-
-  for (const issue of acceptedIssues) {
-    const resolvedFile = getFileContentForIssue(issue.filePath, latestContents)
-    if (!resolvedFile) {
-      throw new Error(`Could not map ${issue.file} back to a source file in memory.`)
-    }
-
-    const before = issue.patch?.before || issue.lines.before.join('\n')
-    const after = issue.patch?.after || issue.lines.after.join('\n')
-    const currentContent = resolvedFile.content
-
-    if (before.trim().length === 0) {
-      latestContents.set(resolvedFile.filePath, currentContent)
-      continue
-    }
-
-    if (!currentContent.includes(before)) {
-      if (currentContent.includes(after)) {
-        changedFiles.set(resolvedFile.filePath, currentContent)
-        continue
-      }
-
-      throw new Error(`Could not apply the accepted patch for ${issue.file}. The original snippet was not found.`)
-    }
-
-    const nextContent = currentContent.replace(before, after)
-    latestContents.set(resolvedFile.filePath, nextContent)
-    changedFiles.set(resolvedFile.filePath, nextContent)
-  }
-
-  return acceptedIssues.length > 0
-    ? Array.from(changedFiles.entries()).map(([filePath, newContent]) => ({ filePath, newContent }))
-    : []
 }
 
 // ─── Analysing panel ──────────────────────────────────────────────────────────
@@ -222,20 +156,12 @@ const SuccessState: React.FC<{
   decisions: Record<string, Decision>
   issues: AnalysisIssue[]
   project: Project | null
-  fileMap: Map<string, string>
   onReviewAgain: () => void
-}> = ({ summary, decisions, issues, project, fileMap, onReviewAgain }) => {
-  const [creatingPr, setCreatingPr] = useState(false)
-  const [prError, setPrError] = useState<string | null>(null)
-  const [prUrl, setPrUrl] = useState<string | null>(null)
+}> = ({ summary, decisions, issues, project, onReviewAgain }) => {
 
   const acceptedIssues = issues.filter((issue) => decisions[issue.id] === 'accepted')
   const acceptedCount = acceptedIssues.length
   const rejected = Object.entries(decisions).filter(([, d]) => d === 'rejected').length
-  const acceptedChanges = issues.filter((issue) => {
-    const afterContent = issue.patch?.after ?? issue.lines.after.join('\n')
-    return decisions[issue.id] === 'accepted' && afterContent.trim().length > 0
-  })
 
   const handleExportChangelog = () => {
     const lines = [
@@ -282,46 +208,6 @@ const SuccessState: React.FC<{
     URL.revokeObjectURL(url)
   }
 
-  const handleCreatePR = async () => {
-    if (!project?.repo) return
-
-    setCreatingPr(true)
-    setPrError(null)
-    setPrUrl(null)
-
-    try {
-      const changes = buildPullRequestChanges(issues, decisions, fileMap)
-      if (changes.length === 0) {
-        throw new Error('There are no accepted code changes ready to send to GitHub.')
-      }
-
-      const headBranch = `refract/fix-${Date.now()}`
-      const response = await createGitHubPullRequest({
-        repoUrl: project.repo,
-        baseBranch: project.branch ?? 'main',
-        headBranch,
-        title: 'refract: apply code quality fixes',
-        body: `This PR was generated by Refract.\n\n- Accepted changes: ${acceptedCount}\n- High impact issues: ${summary.high}\n- Medium impact issues: ${summary.medium}\n- Low impact issues: ${summary.low}`,
-        changes,
-      })
-
-      setPrUrl(response.url)
-      window.open(response.url, '_blank', 'noopener,noreferrer')
-    } catch (error) {
-      console.error('Failed to create GitHub pull request:', error)
-
-      if (error instanceof RateLimitError) {
-        setPrError(error.message)
-      } else if (error instanceof Error) {
-        setPrError(error.message)
-      } else {
-        setPrError('Failed to create GitHub pull request.')
-      }
-    } finally {
-      setCreatingPr(false)
-    }
-  }
-
   const metrics = [
     { label: 'Issues encontrados', value: summary.total },
     { label: 'Aceites',            value: acceptedCount  },
@@ -350,38 +236,10 @@ const SuccessState: React.FC<{
             <Download size={14} /> Export Changelog
           </button>
         )}
-        {project?.repo && acceptedChanges.length > 0 && (
-          <button
-            onClick={handleCreatePR}
-            className="btn btn-secondary"
-            disabled={creatingPr}
-            style={{ gap: 8 }}
-          >
-            {creatingPr ? <CheckCheck size={14} className="spin" /> : <GitBranch size={14} />}
-            {creatingPr ? 'Creating PR...' : 'Create PR'}
-          </button>
-        )}
         <button onClick={onReviewAgain} className="btn btn-ghost">
           Rever novamente
         </button>
       </div>
-
-      {prError && (
-        <div style={{ marginTop: 18, width: '100%', maxWidth: 720, borderRadius: 10, border: '1px solid rgba(255, 91, 79, 0.2)', background: 'rgba(255, 91, 79, 0.08)', padding: '12px 14px', color: '#ff7f76', fontSize: 12, lineHeight: 1.6 }}>
-          {prError}
-        </div>
-      )}
-
-      {prUrl && (
-        <a
-          href={prUrl}
-          target="_blank"
-          rel="noreferrer"
-          style={{ marginTop: 18, fontSize: 13, color: 'var(--ring)', textDecoration: 'underline' }}
-        >
-          Open created pull request
-        </a>
-      )}
     </div>
   )
 }
@@ -411,23 +269,16 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [decisions, setDecisions] = useState<Record<string, Decision>>({})
   const [flashId, setFlashId] = useState<string | null>(null)
   const [flashType, setFlashType] = useState<Decision | null>(null)
-  const [refineOpen, setRefineOpen] = useState(false)
-  const [refineText, setRefineText] = useState('')
   const [viewingFile, setViewingFile] = useState<string | null>(null)
   const [scannedFiles, setScannedFiles] = useState<string[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [issueExplanation, setIssueExplanation] = useState<string | null>(null)
-const [loadingExplanation, setLoadingExplanation] = useState(false)
-const [explanationCache, setExplanationCache] = useState<Record<string, string>>({})
-  const [activeTab, setActiveTab] = useState<'analysis' | 'codemap'>('analysis')
-  const [hotspots, setHotspots] = useState<any[]>([])
-  const [hoveredFile, setHoveredFile] = useState<string | null>(null)
+  const [loadingExplanation, setLoadingExplanation] = useState(false)
+  const [explanationCache, setExplanationCache] = useState<Record<string, string>>({})
   const [decisionHistory, setDecisionHistory] = useState<Record<string, { decision: string; created_at: string }>>({})
   const [currentSig, setCurrentSig] = useState<string | null>(null)
   const [loadingRefactor, setLoadingRefactor] = useState(false)
   const [requestError, setRequestError] = useState<string | null>(null)
-  // Guest session (test account) - used to bypass onboarding for dev/testing
-  const [guestUser, setGuestUser] = useState<any | null>(null)
 
   // Derived
   const allIssues = result?.issues ?? []
@@ -449,11 +300,6 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
     if (!currentIssue) { setCurrentSig(null); return }
     computeSignature(currentIssue).then(setCurrentSig)
   }, [currentIssue?.id])
-
-  // Guest session not needed in web version - using Supabase auth
-  useEffect(() => {
-    // No-op: Supabase auth handles session management
-  }, [])
 
   const currentHistory = currentSig ? decisionHistory[currentSig] : null
 
@@ -577,8 +423,6 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
 
   // Navigate to next issue
   const advance = () => {
-    setRefineOpen(false)
-    setRefineText('')
     const next = currentIssueIdx + 1
     if (next >= visibleIssues.length) setPhase('complete')
     else setCurrentIssueIdx(next)
@@ -655,7 +499,6 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
         const analysisResult: AnalysisResult = e.data.result
         setActiveFile(null)
         setResult(analysisResult)
-        setHotspots([])
 
         try {
           const briefing = await generateBriefing(
@@ -695,9 +538,6 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
 
     workerRef.current.postMessage({ files: serialized })
   }
-
-  const buildDiffLines = (lines: string[], type: 'removed' | 'added'): DiffLine[] =>
-    lines.map((content, i) => ({ num: i + 1, content, type }))
 
   const updateIssueLines = (issueId: string, newPatch: any) => {
     if (!result) return
@@ -741,21 +581,6 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
         </span>
         {result && <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{result.summary.total} issues</span>}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24, flex: 1, justifyContent: 'center' }}>
-        {[
-          { id: 'analysis', label: 'Analysis', icon: <Eye size={13} /> },
-          { id: 'codemap',  label: 'CodeMap',  icon: <GitBranch size={13} /> },
-        ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: activeTab === tab.id ? C.blue : C.muted, padding: '16px 0', position: 'relative', transition: 'color 0.2s' }}>
-            {tab.icon} {tab.label}
-            {activeTab === tab.id && (
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: C.blue, borderRadius: '2px 2px 0 0' }} />
-            )}
-          </button>
-        ))}
-      </div>
-
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button onClick={runAnalysis} className="btn btn-primary btn-sm">
           <Play size={12} /> Run Analysis
@@ -830,22 +655,13 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
           : files.map(f => (
             <div key={f.path}
               onClick={() => { if (!f.isDirectory) setViewingFile(f.path) }}
-              onMouseEnter={() => setHoveredFile(f.path)}
-              onMouseLeave={() => setHoveredFile(null)}
-              style={{ height: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px', borderRadius: 4, background: hoveredFile === f.path ? '#111' : 'transparent', cursor: 'pointer', transition: 'background 0.12s ease' }}>
+              style={{ height: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px', borderRadius: 4, background: 'transparent', cursor: 'pointer', transition: 'background 0.12s ease' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                 {f.isDirectory ? <Folder size={11} color={C.muted} /> : <FileIcon size={11} color={C.muted} />}
                 <span style={{ fontSize: 11, color: f.isDirectory ? '#ddd' : C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {f.name}
                 </span>
               </div>
-              {hoveredFile === f.path && !f.isDirectory && (
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setViewingFile(f.path) }}
-                  style={{ width: 18, height: 18, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 3, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Eye size={10} color={C.muted} />
-                </button>
-              )}
             </div>
           ))
         }
@@ -911,27 +727,6 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
             <p style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: C.muted, marginBottom: 6 }}>{currentIssue.filePath}</p>
             <p style={{ fontSize: 12, color: 'var(--foreground)' }}>{currentIssue.problem}</p>
           </div>
-          <div style={{ display: 'flex', gap: 16 }}>
-            {[
-              { title: 'Before', lines: buildDiffLines(currentIssue.patch?.before ? currentIssue.patch.before.split('\n') : currentIssue.lines.before, 'removed'), col: C.red, loading: false },
-              { title: 'After',  lines: buildDiffLines(currentIssue.patch?.after  ? currentIssue.patch.after.split('\n')  : currentIssue.lines.after,  'added'),   col: C.green, loading: loadingRefactor },
-            ].map(({ title, lines, col, loading }) => (
-              <div key={title} style={{ flex: 1, background: 'var(--background)', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden', minWidth: 0 }}>
-                <div style={{ height: 32, borderBottom: `1px solid ${C.border}`, padding: '0 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 10, color: col, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 500 }}>{title}</span>
-                  {loading && <div style={{ width: 10, height: 10, border: `2px solid ${col}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}
-                </div>
-                <div style={{ padding: '10px 0', overflowX: 'auto' }}>
-                  {loading
-                    ? <div style={{ padding: '0 20px', color: 'var(--muted-foreground)', fontSize: 11, fontStyle: 'italic' }}>A gerar refactorização...</div>
-                    : lines.length === 0
-                    ? <div style={{ padding: '0 20px', color: 'var(--muted-foreground)', fontSize: 11 }}>Sem alterações sugeridas.</div>
-                    : lines.map(l => <DiffLineRow key={l.num} {...l} />)
-                  }
-                </div>
-              </div>
-            ))}
-          </div>
         </>
       )}
 
@@ -941,7 +736,6 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
           decisions={decisions}
           issues={allIssues}
           project={project}
-          fileMap={fileMap}
           onReviewAgain={() => { setPhase('idle'); setResult(null); setDecisions({}) }}
         />
       ) : null}
@@ -994,35 +788,6 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
             <X size={14} /> Reject
           </button>
 
-
-          <button onClick={() => setRefineOpen(o => !o)}
-            style={{ width: '100%', height: 36, background: 'transparent', color: refineOpen ? C.blue : C.text, border: `1px solid ${refineOpen ? C.blue : C.border}`, borderRadius: 100, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all 0.12s ease' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = C.blue; e.currentTarget.style.color = C.blue }}
-            onMouseLeave={e => {
-              if (!refineOpen) {
-                e.currentTarget.style.borderColor = C.border
-                e.currentTarget.style.color = C.text
-              }
-            }}>
-            <Settings2 size={13} /> Refine
-          </button>
-
-          {refineOpen && (
-            <div style={{ marginTop: 10 }}>
-              <textarea
-                value={refineText}
-                onChange={e => setRefineText(e.target.value)}
-                placeholder="Descreve o que queres ajustar nesta sugestao..."
-                className="input font-mono"
-                style={{ width: '100%', minHeight: 80, padding: '8px 10px', fontSize: 11, resize: 'vertical' }}
-              />
-              <button
-                style={{ marginTop: 6, width: '100%', height: 30, background: C.blueDim, border: `1px solid ${C.blue}`, borderRadius: 5, fontSize: 11, color: C.blue, cursor: 'pointer' }}>
-                {'Enviar refinamento ->'}
-              </button>
-            </div>
-          )}
-
           <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <button onClick={() => setCurrentIssueIdx(i => Math.max(0, i - 1))} className="btn btn-ghost btn-sm" style={{ padding: 4 }}>
               <ChevronLeft size={13} /> Prev
@@ -1049,9 +814,9 @@ const [explanationCache, setExplanationCache] = useState<Record<string, string>>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg, overflow: 'hidden' }}>
       {TopBar}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {activeTab === 'analysis' && LeftPanel}
-        {activeTab === 'analysis' ? CenterPanel : <CodeMap projectPath={project?.path} issues={allIssues} />}
-        {activeTab === 'analysis' && RightPanel}
+        {LeftPanel}
+        {CenterPanel}
+        {RightPanel}
       </div>
     </div>
   )
