@@ -3,7 +3,7 @@ import {
   GitBranch, Play, Layout, Code2, ZapOff,
   FileText, ChevronLeft, ChevronRight, Check, X,
   CheckCircle2, ArrowLeft, Download, Folder,
-  File as FileIcon
+  File as FileIcon, Sparkles
 } from 'lucide-react'
 import { Project, AnalysisResult, IssueCategory, AnalysisIssue } from '../../shared/types'
 import { LogoMark } from '../../components/Logo'
@@ -11,6 +11,7 @@ import type { Phase, Decision } from './types'
 import { getProject, saveDecision, getDecisionHistory } from '../../lib/db'
 import { explainIssue, refactorIssue, generateBriefing, RateLimitError } from '../../lib/api'
 import { useFiles } from '../../context/FilesContext'
+import type { TransformProposal } from '../../engine/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const C = {
@@ -244,13 +245,85 @@ const SuccessState: React.FC<{
   )
 }
 
+const RefactorProposalList: React.FC<{
+  proposals: TransformProposal[]
+  loading: boolean
+  onApply: (proposal: TransformProposal) => void
+  onSkip: (proposal: TransformProposal) => void
+}> = ({ proposals, loading, onApply, onSkip }) => {
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
+        <Sparkles size={26} color={C.muted} />
+        <p style={{ fontSize: 14, color: C.muted }}>A preparar propostas determinísticas de refactor...</p>
+      </div>
+    )
+  }
+
+  if (proposals.length === 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
+        <Sparkles size={26} color={C.muted} />
+        <p style={{ fontSize: 14, color: C.muted }}>Não encontrei propostas seguras nesta passagem.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {proposals.map((proposal) => {
+        const safety = proposal.safetyResult
+        const reduced = safety?.warnings.some((warning) => warning.includes('Reduced to conservative version'))
+        const safetyLabel = !safety?.passed ? 'Failed' : reduced ? 'Reduced' : 'Safe'
+        const safetyTone = !safety?.passed ? 'rgba(255, 91, 79, 0.14)' : reduced ? 'rgba(255, 179, 71, 0.14)' : 'rgba(74, 222, 128, 0.12)'
+
+        return (
+          <div key={proposal.id} className="card" style={{ padding: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 10 }}>
+              <div>
+                <p style={{ fontSize: 15, color: C.text, marginBottom: 6 }}>{proposal.title}</p>
+                <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.6 }}>{proposal.description}</p>
+              </div>
+              <span style={{ fontSize: 10, color: C.text, background: safetyTone, borderRadius: 9999, padding: '4px 8px', height: 'fit-content' }}>
+                {safetyLabel === 'Safe' ? 'Safe' : safetyLabel === 'Reduced' ? 'Reduced' : 'Failed'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              <span style={{ fontSize: 11, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 9999, padding: '4px 8px' }}>
+                {proposal.filePath}
+              </span>
+              <span style={{ fontSize: 11, color: C.text, background: 'var(--accent)', borderRadius: 9999, padding: '4px 8px' }}>
+                blast {proposal.blastRadius.breakageSurface}%
+              </span>
+              <span style={{ fontSize: 11, color: C.text, background: 'var(--accent)', borderRadius: 9999, padding: '4px 8px' }}>
+                risk {proposal.blastRadius.testRisk}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => onApply(proposal)} className="btn btn-primary btn-sm">
+                Apply
+              </button>
+              <button onClick={() => onSkip(proposal)} className="btn btn-ghost btn-sm">
+                Skip
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export interface ProjectViewProps { projectId: string | null; onBack: () => void }
 
 export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) => {
   const [phase, setPhase] = useState<Phase>('idle')
-  const { fileMap } = useFiles()
+  const { fileMap, setFileMap } = useFiles()
   const workerRef = useRef<Worker | null>(null)
+  const refactorWorkerRef = useRef<Worker | null>(null)
 
   const files = React.useMemo(() =>
     Array.from(fileMap.keys()).map(path => ({
@@ -278,6 +351,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [decisionHistory, setDecisionHistory] = useState<Record<string, { decision: string; created_at: string }>>({})
   const [currentSig, setCurrentSig] = useState<string | null>(null)
   const [loadingRefactor, setLoadingRefactor] = useState(false)
+  const [loadingRefactorEngine, setLoadingRefactorEngine] = useState(false)
+  const [refactorProposals, setRefactorProposals] = useState<TransformProposal[]>([])
   const [requestError, setRequestError] = useState<string | null>(null)
 
   // Derived
@@ -410,6 +485,14 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     return () => workerRef.current?.terminate()
   }, [])
 
+  useEffect(() => {
+    refactorWorkerRef.current = new Worker(
+      new URL('../../workers/refactor.worker.ts', import.meta.url),
+      { type: 'module' }
+    )
+    return () => refactorWorkerRef.current?.terminate()
+  }, [])
+
 
   // Flash animation helper
   const triggerFlash = (id: string, type: Decision) => {
@@ -467,6 +550,69 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     allIssues.forEach(i => { all[i.id] = 'accepted' })
     setDecisions(all)
     setPhase('complete')
+  }
+
+  const runRefactorEngine = async () => {
+    if (!refactorWorkerRef.current) return
+    setLoadingRefactorEngine(true)
+    setRequestError(null)
+
+    const serialized: Record<string, string> = {}
+    for (const [key, value] of fileMap.entries()) {
+      serialized[key] = value
+    }
+
+    refactorWorkerRef.current.onmessage = (event: MessageEvent) => {
+      const { type } = event.data
+
+      if (type === 'success') {
+        setRefactorProposals(event.data.proposals as TransformProposal[])
+        setPhase('refactoring')
+        setLoadingRefactorEngine(false)
+        return
+      }
+
+      if (type === 'error') {
+        console.error('Refactor engine failed', event.data.error)
+        setRequestError(event.data.error ?? 'Failed to analyze refactoring proposals.')
+        setLoadingRefactorEngine(false)
+      }
+    }
+
+    refactorWorkerRef.current.postMessage({ files: serialized, options: { maxProposals: 12 } })
+  }
+
+  const applyProposalToFileMap = (proposal: TransformProposal) => {
+    const nextMap = new Map(fileMap)
+    if (proposal.movedTo) nextMap.delete(proposal.filePath)
+    nextMap.set(proposal.movedTo ?? proposal.filePath, proposal.after)
+    for (const file of proposal.newFiles ?? []) {
+      nextMap.set(file.path, file.content)
+    }
+    setFileMap(nextMap)
+  }
+
+  const handleApplyProposal = async (proposal: TransformProposal) => {
+    applyProposalToFileMap(proposal)
+    setRefactorProposals((current) => current.filter((entry) => entry.id !== proposal.id))
+
+    if (!project?.id) return
+    try {
+      await saveDecision(project.id, proposal.id, proposal.type, proposal.filePath, proposal.title, 'accepted', 1)
+    } catch (error) {
+      console.error('Failed to persist refactor apply decision', error)
+    }
+  }
+
+  const handleSkipProposal = async (proposal: TransformProposal) => {
+    setRefactorProposals((current) => current.filter((entry) => entry.id !== proposal.id))
+
+    if (!project?.id) return
+    try {
+      await saveDecision(project.id, proposal.id, proposal.type, proposal.filePath, proposal.title, 'rejected', 0)
+    } catch (error) {
+      console.error('Failed to persist refactor skip decision', error)
+    }
   }
 
   // Run analysis via Web Worker
@@ -582,6 +728,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         {result && <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{result.summary.total} issues</span>}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button onClick={runRefactorEngine} className="btn btn-ghost btn-sm">
+          <Sparkles size={12} /> Refactor Engine
+        </button>
         <button onClick={runAnalysis} className="btn btn-primary btn-sm">
           <Play size={12} /> Run Analysis
         </button>
@@ -719,6 +868,15 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
       {phase === 'briefing' && result && (
         <BriefingPanel text={briefingText} onStart={() => setPhase('reviewing')} />
+      )}
+
+      {phase === 'refactoring' && (
+        <RefactorProposalList
+          proposals={refactorProposals}
+          loading={loadingRefactorEngine}
+          onApply={handleApplyProposal}
+          onSkip={handleSkipProposal}
+        />
       )}
 
       {phase === 'reviewing' && currentIssue && (

@@ -45,6 +45,14 @@ export interface GitHubPullRequestInput {
   }>
 }
 
+export interface RefactorNameRequest {
+  kind: 'component' | 'hook'
+  filePath: string
+  currentName: string
+  ownerName: string
+  symbols: string[]
+}
+
 async function getAccessToken(): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('Not authenticated')
@@ -123,6 +131,22 @@ export async function generateBriefing(
 
   const data = await readResponse<{ briefing: string }>(response, 'Failed to generate briefing')
   return data.briefing
+}
+
+export async function suggestRefactorName(input: RefactorNameRequest): Promise<string> {
+  const accessToken = await getAccessToken()
+
+  const response = await fetch('/api/ai/name', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(input),
+  })
+
+  const data = await readResponse<{ name: string }>(response, 'Failed to suggest refactor name')
+  return data.name
 }
 
 // ─── Codemap API ─────────────────────────────────────────────────────────────
