@@ -45,13 +45,53 @@ class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { ha
 
 export type Page = 'home' | 'projects' | 'repos' | 'guidelines' | 'settings' | 'projectView';
 
+function routeToPage(pathname: string): Page {
+  switch (pathname) {
+    case '/projects':
+      return 'projects';
+    case '/repos':
+      return 'repos';
+    case '/guidelines':
+      return 'guidelines';
+    case '/settings':
+      return 'settings';
+    case '/project-view':
+      return 'projectView';
+    default:
+      return 'home';
+  }
+}
+
+function pageToRoute(page: Page): string {
+  switch (page) {
+    case 'projects':
+      return '/projects';
+    case 'repos':
+      return '/repos';
+    case 'guidelines':
+      return '/guidelines';
+    case 'settings':
+      return '/settings';
+    case 'projectView':
+      return '/project-view';
+    default:
+      return '/';
+  }
+}
+
 export const AppShell: React.FC = () => {
   const { session, loading, profile, refreshProfile } = useAuth();
-  const [activePage, setActivePage] = useState<Page>('home');
+  const [activePage, setActivePage] = useState<Page>(() => routeToPage(window.location.pathname));
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    const syncPageFromLocation = () => {
+      setActivePage(routeToPage(window.location.pathname));
+    };
 
-
+    window.addEventListener('popstate', syncPageFromLocation);
+    return () => window.removeEventListener('popstate', syncPageFromLocation);
+  }, []);
 
   // Auth gate: show splash screen while loading auth state
   if (loading) {
@@ -92,6 +132,7 @@ export const AppShell: React.FC = () => {
     }
     const normalizedPage = page === 'project-view' ? 'projectView' : (page as Page);
     setActivePage(normalizedPage);
+    window.history.pushState({}, '', pageToRoute(normalizedPage));
   };
 
   const renderPage = () => {
@@ -101,7 +142,7 @@ export const AppShell: React.FC = () => {
       case 'repos':       return <ReposPage onNavigate={handleNavigate} />;
       case 'guidelines':  return <GuidelinesPage />;
       case 'settings':    return <SettingsPage />;
-      case 'projectView': return <ProjectView projectId={activeProjectId} onBack={() => setActivePage('home')} />;
+      case 'projectView': return <ProjectView projectId={activeProjectId} onBack={() => handleNavigate('home')} />;
       default:            return <HomePage onNavigate={handleNavigate} />;
     }
   };

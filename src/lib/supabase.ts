@@ -31,7 +31,7 @@ export interface UserProfile {
   email: string
   plan: 'free' | 'pro' | 'team' | 'enterprise'
   github_token?: string | null
-  github_installation_id?: string | null
+  github_installation_id?: number | null
   onboarding_completed: boolean
   onboarding_answers?: Record<string, any>
   language: 'en' | 'pt' | 'es' | 'fr' | 'de'

@@ -26,14 +26,18 @@ export function parseGitHubRepoUrl(repoUrl: string): ParsedGitHubRepo {
   }
 }
 
-export async function githubRequest<T>(githubToken: string, path: string, init?: RequestInit): Promise<T> {
+export async function githubRequest<T>(
+  githubToken: string | null | undefined,
+  path: string,
+  init?: RequestInit
+): Promise<T> {
   const response = await fetch(`${GITHUB_API_BASE}${path}`, {
     ...init,
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${githubToken}`,
       'Content-Type': 'application/json',
       'X-GitHub-Api-Version': '2022-11-28',
+      ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
       ...(init?.headers ?? {}),
     },
   })

@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import { SignJWT, importPKCS8 } from 'jose'
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL!,
@@ -11,18 +10,20 @@ const supabase = createClient(
 async function generateAppJWT(): Promise<string> {
   let privateKey = process.env.GITHUB_APP_PRIVATE_KEY
   if (!privateKey) throw new Error('GITHUB_APP_PRIVATE_KEY not defined')
-  
+
   privateKey = privateKey.replace(/\\n/g, '\n')
   if (privateKey.startsWith('"')) privateKey = privateKey.slice(1, -1)
 
   const appId = process.env.GITHUB_APP_ID
   if (!appId) throw new Error('GITHUB_APP_ID not defined')
 
-  // GitHub App keys são PKCS#1 — usa createPrivateKey do Node.js para converter
-  const { createPrivateKey } = await import('crypto')
-  const keyObject = createPrivateKey(privateKey)
-  const pkcs8 = keyObject.export({ type: 'pkcs8', format: 'pem' }) as string
-  const privateKeyObj = await importPKCS8(pkcs8, 'RS256')
+  // Converter PKCS#1 (BEGIN RSA PRIVATE KEY) para PKCS#8 (BEGIN PRIVATE KEY)
+  const { createPrivateKey } = await import('node:crypto')
+  const keyObject = createPrivateKey({ key: privateKey, format: 'pem' })
+  const pkcs8pem = keyObject.export({ type: 'pkcs8', format: 'pem' }) as string
+
+  const { importPKCS8, SignJWT } = await import('jose')
+  const privateKeyObj = await importPKCS8(pkcs8pem, 'RS256')
 
   const now = Math.floor(Date.now() / 1000)
   return new SignJWT({ iss: appId })
@@ -31,6 +32,7 @@ async function generateAppJWT(): Promise<string> {
     .setExpirationTime(now + 540)
     .sign(privateKeyObj)
 }
+
 
 // ─── Gerar Installation Access Token ─────────────────────────────────────────
 
@@ -60,7 +62,7 @@ export async function getInstallationToken(installationId: number): Promise<stri
 
 // ─── Autenticar utilizador via Supabase session ───────────────────────────────
 
-export async function getAuthenticatedUser(authHeader: string | undefined) {
+async function getAuthenticatedProfile(authHeader: string | undefined) {
   if (!authHeader?.startsWith('Bearer ')) {
     throw new Error('Missing authorization header')
   }
@@ -76,16 +78,50 @@ export async function getAuthenticatedUser(authHeader: string | undefined) {
     .eq('id', user.id)
     .single()
 
-  if (!profile?.github_installation_id) {
-    throw new Error('GitHub App not installed')
-  }
-
-  const installationToken = await getInstallationToken(profile.github_installation_id)
-
   return {
     user,
     plan: profile.plan ?? 'free',
+    installationId: profile?.github_installation_id ?? null,
+  }
+}
+
+export async function getAuthenticatedUser(authHeader: string | undefined) {
+  const { user, plan, installationId } = await getAuthenticatedProfile(authHeader)
+
+  if (!installationId) {
+    throw new Error('GitHub App not installed')
+  }
+
+  const installationToken = await getInstallationToken(installationId)
+
+  return {
+    user,
+    plan,
     githubToken: installationToken,
-    installationId: profile.github_installation_id,
+    installationId,
+  }
+}
+
+export async function getAuthenticatedUserWithOptionalGitHub(
+  authHeader: string | undefined
+) {
+  const { user, plan, installationId } = await getAuthenticatedProfile(authHeader)
+
+  if (!installationId) {
+    return {
+      user,
+      plan,
+      githubToken: null,
+      installationId: null,
+    }
+  }
+
+  const installationToken = await getInstallationToken(installationId)
+
+  return {
+    user,
+    plan,
+    githubToken: installationToken,
+    installationId,
   }
 }

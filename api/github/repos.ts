@@ -33,8 +33,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json(list)
   } catch (err: any) {
+    const isUnauthorized =
+      err.message === 'Missing authorization header' || err.message === 'Invalid session'
     const isNotInstalled = err.message === 'GitHub App not installed'
-    return res.status(isNotInstalled ? 403 : 500).json({
+    return res.status(isUnauthorized ? 401 : isNotInstalled ? 403 : 500).json({
       error: err.message ?? 'Failed to fetch repos',
       stack: err.stack ?? null,
     })

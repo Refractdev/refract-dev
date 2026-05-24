@@ -1,90 +1,156 @@
-import git from 'isomorphic-git'
-import http from 'isomorphic-git/http/node'
-import { createFsFromVolume, Volume } from 'memfs'
-import { getAuthenticatedUser } from '../_lib/auth'
-import { githubRequest, parseGitHubRepoUrl } from '../_lib/github'
-import { applyRateLimitHeaders, checkRateLimit } from '../_lib/ratelimit'
+import path from 'path';
+import git from 'isomorphic-git';
+import http from 'isomorphic-git/http/node';
+import { Volume, createFsFromVolume } from 'memfs';
+import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth';
+import { githubRequest, parseGitHubRepoUrl } from '../_lib/github';
+import { applyRateLimitHeaders, checkRateLimit } from '../_lib/ratelimit';
 
-const TEXT_FILE_PATTERN = /\.(ts|tsx|js|jsx|json|css|html|md)$/i
-const IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'coverage'])
+const TEXT_FILE_PATTERN = /\.(ts|tsx|js|jsx|json|css|html|md)$/i;
+const IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'coverage']);
 
-function readDir(vol: Volume, dir: string): Record<string, string> {
-  const result: Record<string, string> = {}
+async function getFilesFromGit(fs: any): Promise<Record<string, string>> {
+  const files: Record<string, string> = {};
 
-  for (const entry of vol.readdirSync(dir) as string[]) {
-    if (IGNORE.has(entry)) continue
+  await git.walk({
+    fs,
+    dir: '/repo',
+    trees: [git.TREE({ ref: 'HEAD' })],
+    map: async (filepath, [entry]) => {
+      if (!entry) return null;
+      const type = await entry.type();
 
-    const fullPath = `${dir}/${entry}`
-    const stat = vol.statSync(fullPath)
+      const filename = path.basename(filepath);
+      if (IGNORE.has(filename)) return null;
 
-    if (stat.isDirectory()) {
-      Object.assign(result, readDir(vol, fullPath))
-      continue
-    }
+      const parts = filepath.split('/');
+      if (parts.some((part) => IGNORE.has(part))) return null;
 
-    if (!TEXT_FILE_PATTERN.test(entry)) continue
-    result[fullPath.replace('/repo/', '')] = vol.readFileSync(fullPath, 'utf8') as string
-  }
+      if (type === 'tree') {
+        return filepath; // recurse
+      }
 
-  return result
+      if (type !== 'blob') return null;
+      if (!TEXT_FILE_PATTERN.test(filename)) return null;
+
+      const contentBuffer = await entry.content();
+      if (!contentBuffer) return null;
+
+      const content = new TextDecoder().decode(contentBuffer);
+      files[filepath] = content;
+      return filepath;
+    },
+  });
+
+  return files;
 }
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { user, plan, githubToken } = await getAuthenticatedUser(req.headers.authorization)
-    const limitResult = await checkRateLimit(user.id, plan)
-    applyRateLimitHeaders(res, limitResult)
+    const { user, plan, githubToken } = await getAuthenticatedUserWithOptionalGitHub(
+      req.headers.authorization
+    );
+    const limitResult = await checkRateLimit(user.id, plan);
+    applyRateLimitHeaders(res, limitResult);
 
     if (!limitResult.success) {
       return res.status(429).json({
         error: 'Rate limit exceeded',
-        message: plan === 'free'
-          ? 'Limite do plano Free atingido (20/hora). Faz upgrade para Pro.'
-          : `Limite atingido. Reset: ${new Date(limitResult.reset).toLocaleTimeString('pt-PT')}`,
+        message:
+          plan === 'free'
+            ? 'Limite do plano Free atingido (20/hora). Faz upgrade para Pro.'
+            : `Limite atingido. Reset: ${new Date(limitResult.reset).toLocaleTimeString('pt-PT')}`,
         reset: limitResult.reset,
-      })
+      });
     }
 
-    if (!githubToken) {
-      return res.status(400).json({ error: 'GitHub account not connected' })
-    }
-
-    const { repoUrl, branch } = req.body ?? {}
+    const { repoUrl, branch } = req.body ?? {};
     if (!repoUrl) {
-      return res.status(400).json({ error: 'Missing repoUrl' })
+      return res.status(400).json({ error: 'Missing repoUrl' });
     }
 
-    const { owner, repo, repoUrl: normalizedRepoUrl } = parseGitHubRepoUrl(repoUrl)
-    const repoMeta = await githubRequest<any>(githubToken, `/repos/${owner}/${repo}`)
-    const branchName = branch || repoMeta.default_branch || 'main'
+    // Resolve the repository URL and details
+    let normalizedRepoUrl = repoUrl.trim();
+    let isGitHub = false;
+    let owner = '';
+    let repo = '';
 
-    const vol = new Volume()
-    const fs = createFsFromVolume(vol)
+    try {
+      const parsed = parseGitHubRepoUrl(repoUrl);
+      owner = parsed.owner;
+      repo = parsed.repo;
+      normalizedRepoUrl = parsed.repoUrl;
+      isGitHub = true;
+    } catch {
+      // Not a standard GitHub URL, keep as is
+    }
+
+    // Detect default branch if not specified
+    let branchName = branch;
+    if (!branchName) {
+      try {
+        const remoteInfo = await git.getRemoteInfo({
+          http,
+          url: normalizedRepoUrl.endsWith('.git') ? normalizedRepoUrl : `${normalizedRepoUrl}.git`,
+          onAuth: githubToken
+            ? () => ({
+                username: githubToken,
+                password: 'x-oauth-basic',
+              })
+            : undefined,
+        });
+        branchName = remoteInfo.HEAD ? remoteInfo.HEAD.replace('refs/heads/', '') : 'main';
+      } catch (err) {
+        console.warn('Failed to get remote info, trying fallback options', err);
+        if (isGitHub) {
+          try {
+            const repoMeta = await githubRequest<any>(githubToken, `/repos/${owner}/${repo}`);
+            branchName = repoMeta.default_branch || 'main';
+          } catch {
+            branchName = 'main';
+          }
+        } else {
+          branchName = 'main';
+        }
+      }
+    }
+
+    const vol = new Volume();
+    const fs = createFsFromVolume(vol);
 
     await git.clone({
       fs,
       http,
       dir: '/repo',
-      url: `${normalizedRepoUrl}.git`,
+      url: normalizedRepoUrl.endsWith('.git') ? normalizedRepoUrl : `${normalizedRepoUrl}.git`,
       ref: branchName,
       singleBranch: true,
       depth: 1,
-      onAuth: () => ({
-        username: githubToken,
-        password: 'x-oauth-basic',
-      }),
-    })
+      noTags: true,
+      noCheckout: true,
+      onAuth: githubToken
+        ? () => ({
+            username: githubToken,
+            password: 'x-oauth-basic',
+          })
+        : undefined,
+    });
+
+    const files = await getFilesFromGit(fs);
 
     return res.status(200).json({
-      files: readDir(vol, '/repo'),
+      files,
       branch: branchName,
-    })
+    });
   } catch (error: any) {
-    const status = error.message === 'Missing authorization' || error.message === 'Invalid token' ? 401 : 500
-    return res.status(status).json({ error: error.message || 'Failed to clone GitHub repository' })
+    const status =
+      error.message === 'Missing authorization header' || error.message === 'Invalid session'
+        ? 401
+        : 500;
+    return res.status(status).json({ error: error.message || 'Failed to clone repository' });
   }
 }

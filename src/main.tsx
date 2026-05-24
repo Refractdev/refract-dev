@@ -10,7 +10,8 @@ const params = new URLSearchParams(window.location.search)
 const installationId = params.get('installation_id')
 if (installationId) {
   localStorage.setItem('pending_installation_id', installationId)
-  window.history.replaceState({}, '', '/')
+  const cleanUrl = `${window.location.pathname}${window.location.hash}`
+  window.history.replaceState({}, '', cleanUrl || '/')
 }
 
 /**

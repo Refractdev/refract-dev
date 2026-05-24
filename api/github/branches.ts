@@ -42,7 +42,10 @@ export default async function handler(req: any, res: any) {
       })),
     })
   } catch (error: any) {
-    const status = error.message === 'Missing authorization' || error.message === 'Invalid token' ? 401 : 500
+    const status =
+      error.message === 'Missing authorization header' || error.message === 'Invalid session'
+        ? 401
+        : 500
     return res.status(status).json({ error: error.message || 'Failed to load GitHub branches' })
   }
 }

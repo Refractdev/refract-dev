@@ -105,11 +105,22 @@ export async function deleteProject(id: string): Promise<void> {
 // ─── Activity ────────────────────────────────────────────────────────────────
 
 export async function getActivity(userId: string, limit = 8): Promise<Activity[]> {
+  const { data: projects, error: projectsError } = await withTimeout(
+    supabase
+      .from('projects')
+      .select('id')
+      .eq('user_id', userId)
+  )
+  if (projectsError) throw projectsError
+
+  const projectIds = (projects ?? []).map((project: { id: string }) => project.id)
+  if (projectIds.length === 0) return []
+
   const { data, error } = await withTimeout(
     supabase
       .from('activity')
       .select('*')
-      .eq('user_id', userId)
+      .in('project_id', projectIds)
       .order('created_at', { ascending: false })
       .limit(limit)
   )
