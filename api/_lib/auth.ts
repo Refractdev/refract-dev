@@ -1,9 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { getAdminSupabaseClient } from './supabase'
 
 // ─── Gerar JWT para autenticar como GitHub App ────────────────────────────────
 
@@ -67,6 +62,7 @@ async function getAuthenticatedProfile(authHeader: string | undefined) {
     throw new Error('Missing authorization header')
   }
 
+  const supabase = getAdminSupabaseClient()
   const accessToken = authHeader.replace('Bearer ', '')
   const { data: { user }, error } = await supabase.auth.getUser(accessToken)
 
@@ -76,11 +72,11 @@ async function getAuthenticatedProfile(authHeader: string | undefined) {
     .from('users')
     .select('plan, github_installation_id')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
 
   return {
     user,
-    plan: profile.plan ?? 'free',
+    plan: profile?.plan ?? 'free',
     installationId: profile?.github_installation_id ?? null,
   }
 }

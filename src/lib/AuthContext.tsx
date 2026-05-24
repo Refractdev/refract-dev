@@ -38,63 +38,119 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true)
 
   const loadingDone = useRef(false)
-  const doneLoading = () => {
+  const doneLoading = useCallback(() => {
     if (!loadingDone.current) {
       loadingDone.current = true
       setLoading(false)
     }
-  }
+  }, [])
 
-  const checkPendingInstallation = useCallback(async (userId: string, currentProfile: UserProfile): Promise<UserProfile> => {
-    const pendingId = localStorage.getItem('pending_installation_id')
-    if (!pendingId) return currentProfile
+  const syncGitHubInstallationFromUrl = useCallback(async (userId: string, currentProfile: UserProfile): Promise<UserProfile> => {
+    const params = new URLSearchParams(window.location.search)
+    const installationIdParam = params.get('installation_id')
+    const shouldCleanUrl = installationIdParam !== null || params.get('github_connected') === '1'
+    if (!installationIdParam) {
+      if (shouldCleanUrl) {
+        params.delete('github_connected')
+        window.history.replaceState(
+          {},
+          '',
+          `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash}`
+        )
+      }
+      return currentProfile
+    }
 
-    localStorage.removeItem('pending_installation_id')
+    const installationId = Number(installationIdParam)
+    if (!Number.isFinite(installationId)) {
+      console.warn('[auth] ignored invalid installation_id from redirect:', installationIdParam)
+      return currentProfile
+    }
+
     try {
       const { data: updatedProfile, error } = await supabase
         .from('users')
-        .update({ github_installation_id: Number(pendingId) })
+        .update({ github_installation_id: installationId })
         .eq('id', userId)
-        .select()
+        .select('*')
         .single()
 
       if (!error && updatedProfile) {
+        params.delete('installation_id')
+        params.delete('github_connected')
+        const nextQuery = params.toString()
+        window.history.replaceState(
+          {},
+          '',
+          `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`
+        )
         return updatedProfile as UserProfile
       }
     } catch (err) {
-      console.warn('[auth] failed to save pending installation id:', err)
+      console.warn('[auth] failed to save installation id from redirect:', err)
     }
+
     return currentProfile
   }, [])
 
-  const fetchProfile = useCallback(async (userId: string): Promise<UserProfile | null> => {
+  const ensureProfileForSession = useCallback(async (currentSession: Session): Promise<UserProfile | null> => {
+    const userId = currentSession.user.id
     try {
       const { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('id', userId)
-        .single()
+        .maybeSingle()
 
-      if (error) {
-        setProfile(null)
-        return null
+      if (error || !data) {
+        const { error: insertError } = await supabase.from('users').insert({
+          id: userId,
+          auth_id: userId,
+          name: currentSession.user.user_metadata?.name ?? currentSession.user.email?.split('@')[0] ?? 'User',
+          email: currentSession.user.email ?? '',
+          plan: 'free',
+          onboarding_completed: false,
+          language: 'pt',
+          avatar_url: currentSession.user.user_metadata?.avatar_url ?? null,
+        })
+
+        if (insertError) {
+          setProfile(null)
+          return null
+        }
+
+        const { data: createdProfile, error: createdError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .single()
+
+        if (createdError || !createdProfile) {
+          setProfile(null)
+          return null
+        }
+
+        const nextProfile = await syncGitHubInstallationFromUrl(userId, createdProfile as UserProfile)
+        setProfile(nextProfile)
+        return nextProfile
       }
+
       let nextProfile = data as UserProfile
-      nextProfile = await checkPendingInstallation(userId, nextProfile)
+      nextProfile = await syncGitHubInstallationFromUrl(userId, nextProfile)
       setProfile(nextProfile)
       return nextProfile
     } catch (e) {
       setProfile(null)
       return null
     }
-  }, [checkPendingInstallation])
+  }, [syncGitHubInstallationFromUrl])
 
   const sessionRef = useRef<Session | null>(null)
   sessionRef.current = session
 
   const refreshProfile = useCallback(async () => {
-    if (sessionRef.current?.user?.id) await fetchProfile(sessionRef.current.user.id)
-  }, [fetchProfile])
+    if (sessionRef.current) await ensureProfileForSession(sessionRef.current)
+  }, [ensureProfileForSession])
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut()
@@ -140,7 +196,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const installGitHubApp = useCallback(() => {
     const userId = sessionRef.current?.user?.id
     if (!userId) return
-    const url = `https://github.com/apps/refractdev/installations/new?state=${userId}`
+
+    const rawState = JSON.stringify({
+      userId,
+      returnTo: window.location.origin,
+    })
+    const state = btoa(rawState)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '')
+
+    const url = `https://github.com/apps/refractdev/installations/new?state=${encodeURIComponent(state)}`
     window.location.href = url
   }, [])
 
@@ -148,59 +214,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let initialSessionHandled = false
 
+    const loadProfileAsync = (currentSession: Session) => {
+      window.setTimeout(() => {
+        void ensureProfileForSession(currentSession).finally(() => {
+          if (!initialSessionHandled) {
+            initialSessionHandled = true
+            doneLoading()
+          }
+        })
+      }, 0)
+    }
+
+    const bootstrapSession = async () => {
+      let currentSession: Session | null = null
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        currentSession = session ?? null
+        setSession(currentSession)
+
+        if (currentSession?.user?.id) {
+          loadProfileAsync(currentSession)
+        } else {
+          setProfile(null)
+        }
+      } catch (err) {
+        console.warn('[auth] failed to bootstrap session:', err)
+        setProfile(null)
+      } finally {
+        if (!currentSession?.user?.id && !initialSessionHandled) {
+          initialSessionHandled = true
+          doneLoading()
+        }
+      }
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
       setSession(s)
 
-      if (event === 'TOKEN_REFRESHED') {
+      if (s?.user?.id) {
+        loadProfileAsync(s)
+      } else {
+        setProfile(null)
         if (!initialSessionHandled) {
           initialSessionHandled = true
           doneLoading()
         }
-        return
-      }
-
-      if (s?.user?.id) {
-        const { data: profileData, error: profileError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', s.user.id)
-          .single()
-
-        if (profileError || !profileData) {
-          const { error: insertError } = await supabase.from('users').insert({
-            id: s.user.id,
-            auth_id: s.user.id,
-            name: s.user.user_metadata?.name ?? s.user.email?.split('@')[0] ?? 'User',
-            email: s.user.email ?? '',
-            plan: 'free',
-            onboarding_completed: false,
-            language: 'pt',
-            avatar_url: s.user.user_metadata?.avatar_url ?? null,
-          })
-          if (!insertError) {
-            const { data: newProfile } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', s.user.id)
-              .single()
-            if (newProfile) {
-              const finalProfile = await checkPendingInstallation(s.user.id, newProfile as UserProfile)
-              setProfile(finalProfile)
-            }
-          } else {
-            setProfile(null)
-          }
-        } else {
-          const finalProfile = await checkPendingInstallation(s.user.id, profileData as UserProfile)
-          setProfile(finalProfile)
-        }
-      } else {
-        setProfile(null)
-      }
-
-      if (!initialSessionHandled) {
-        initialSessionHandled = true
-        doneLoading()
       }
     })
 
@@ -211,11 +269,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }, 5000)
 
+    bootstrapSession()
+
     return () => {
       subscription.unsubscribe()
       clearTimeout(fallback)
     }
-  }, [fetchProfile, checkPendingInstallation])
+  }, [ensureProfileForSession])
 
   return (
     <AuthContext.Provider value={{ session, profile, loading, refreshProfile, signOut, signIn, signUp, installGitHubApp }}>

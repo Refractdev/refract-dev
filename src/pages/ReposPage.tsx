@@ -38,7 +38,7 @@ interface BranchModalState {
 }
 
 export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => void }> = ({ onNavigate }) => {
-  const { profile, installGitHubApp, refreshProfile } = useAuth()
+  const { profile, installGitHubApp } = useAuth()
   const { setFileMap } = useFiles()
   const [repos, setRepos] = useState<GitHubRepo[]>([])
   const [loading, setLoading] = useState(false)
@@ -68,19 +68,29 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
       setError(null)
       setAppNotInstalled(false)
 
-      try {
-        const nextRepos = await getGitHubRepos()
-        if (!cancelled) setRepos(nextRepos)
-      } catch (err) {
-        if (cancelled) return
-        const msg = err instanceof Error ? err.message : ''
-        if (msg.includes('GitHub App not installed') || msg.includes('403')) {
-          setAppNotInstalled(true)
-        } else if (err instanceof RateLimitError) {
-          setError(err.message)
-        } else {
-          setError(err instanceof Error ? err.message : 'Failed to load GitHub repositories.')
+      const attemptLoad = async () => {
+        try {
+          const nextRepos = await getGitHubRepos()
+          if (!cancelled) setRepos(nextRepos)
+          return true
+        } catch (err) {
+          if (cancelled) return false
+
+          const msg = err instanceof Error ? err.message : ''
+
+          if (msg.includes('GitHub App not installed') || msg.includes('403')) {
+            setAppNotInstalled(true)
+          } else if (err instanceof RateLimitError) {
+            setError(err.message)
+          } else {
+            setError(err instanceof Error ? err.message : 'Failed to load GitHub repositories.')
+          }
+          return false
         }
+      }
+
+      try {
+        await attemptLoad()
       } finally {
         if (!cancelled) setLoading(false)
       }
