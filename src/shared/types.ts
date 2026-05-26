@@ -35,6 +35,12 @@ export type IssueCategory =
   | 'prop-drilling'
   | 'generic-naming'
   | 'circular-dep'
+  | 'state-explosion'
+  | 'api-in-component'
+  | 'missing-error-boundary'
+  | 'memory-leak'
+  | 'duplicate-logic'
+  | 'unsafe-cast'
 
 export type Impact = 'High' | 'Medium' | 'Low'
 

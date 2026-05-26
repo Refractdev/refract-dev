@@ -3,7 +3,8 @@ import {
   GitBranch, Play, Layout, Code2, ZapOff,
   FileText, ChevronLeft, ChevronRight, Check, X,
   CheckCircle2, ArrowLeft, Download, Folder,
-  File as FileIcon, Sparkles
+  File as FileIcon, Sparkles,
+  Terminal, Zap, Tag, RefreshCw, Layers, Globe, Shield, Activity, Copy, AlertTriangle
 } from 'lucide-react'
 import { Project, AnalysisResult, IssueCategory, AnalysisIssue } from '../../shared/types'
 import { LogoMark } from '../../components/Logo'
@@ -40,17 +41,34 @@ const CATEGORY_META: Record<IssueCategory, { name: string; icon: string; impact:
   'prop-drilling':       { name: 'Prop Drilling',        icon: 'branch',    impact: 'Medium' },
   'generic-naming':      { name: 'Generic Naming',       icon: 'tag',       impact: 'Low'    },
   'circular-dep':        { name: 'Circular Deps',        icon: 'refresh-cw',impact: 'High'   },
+  'state-explosion':     { name: 'State Explosion',      icon: 'layers',    impact: 'High'   },
+  'api-in-component':    { name: 'API in Component',     icon: 'globe',     impact: 'High'   },
+  'missing-error-boundary': { name: 'Missing Error Boundary', icon: 'shield',  impact: 'Medium' },
+  'memory-leak':         { name: 'Memory Leak',          icon: 'activity',  impact: 'High'   },
+  'duplicate-logic':     { name: 'Duplicate Logic',      icon: 'copy',      impact: 'Medium' },
+  'unsafe-cast':         { name: 'Unsafe Cast',          icon: 'alert',     impact: 'High'   },
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 const CategoryIcon: React.FC<{ name: string; color?: string }> = ({ name, color = C.muted }) => {
   const props = { size: 14, color }
   switch (name) {
-    case 'layout':    return <Layout    {...props} />
-    case 'code2':     return <Code2     {...props} />
-    case 'zap-off':   return <ZapOff    {...props} />
-    case 'file-text': return <FileText  {...props} />
-    default:          return <FileText  {...props} />
+    case 'layout':     return <Layout     {...props} />
+    case 'code2':      return <Code2      {...props} />
+    case 'zap-off':    return <ZapOff     {...props} />
+    case 'file-text':  return <FileText   {...props} />
+    case 'terminal':   return <Terminal   {...props} />
+    case 'zap':        return <Zap        {...props} />
+    case 'branch':     return <GitBranch  {...props} />
+    case 'tag':        return <Tag        {...props} />
+    case 'refresh-cw': return <RefreshCw  {...props} />
+    case 'layers':     return <Layers     {...props} />
+    case 'globe':      return <Globe      {...props} />
+    case 'shield':     return <Shield     {...props} />
+    case 'activity':   return <Activity   {...props} />
+    case 'copy':       return <Copy       {...props} />
+    case 'alert':      return <AlertTriangle {...props} />
+    default:           return <FileText   {...props} />
   }
 }
 
@@ -321,7 +339,7 @@ export interface ProjectViewProps { projectId: string | null; onBack: () => void
 
 export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) => {
   const [phase, setPhase] = useState<Phase>('idle')
-  const { fileMap, setFileMap } = useFiles()
+  const { fileMap, setFileMap, loadFilesForProject } = useFiles()
   const workerRef = useRef<Worker | null>(null)
   const refactorWorkerRef = useRef<Worker | null>(null)
 
@@ -447,6 +465,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     async function load() {
       if (!projectId) return
       
+      await loadFilesForProject(projectId)
+
       if (projectId.startsWith('local-')) {
         setProject({
           id: projectId,
@@ -474,7 +494,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       } catch (err) { console.error('Failed to load project', err) }
     }
     load()
-  }, [projectId])
+  }, [projectId, loadFilesForProject])
 
   // Worker lifecycle
   useEffect(() => {
@@ -728,9 +748,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         {result && <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{result.summary.total} issues</span>}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button onClick={runRefactorEngine} className="btn btn-ghost btn-sm">
-          <Sparkles size={12} /> Refactor Engine
-        </button>
+
         <button onClick={runAnalysis} className="btn btn-primary btn-sm">
           <Play size={12} /> Run Analysis
         </button>
@@ -966,7 +984,19 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
   }
 
-  // Hotspots feature removed for now; onboarding/auth gating will be controlled via explicit flags
+  if (project && fileMap.size === 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: C.bg, gap: 20, padding: 24 }}>
+        <ZapOff size={48} color={C.muted} style={{ marginBottom: 8 }} />
+        <p style={{ fontSize: 16, color: 'var(--foreground)', fontWeight: 500, textAlign: 'center' }}>
+          Ficheiros não encontrados — clona o repositório novamente
+        </p>
+        <button onClick={onBack} className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <ArrowLeft size={14} /> Voltar
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg, overflow: 'hidden' }}>
