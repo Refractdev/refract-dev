@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
-  GitBranch, Play, Layout, Code2, ZapOff,
+  GitBranch, Play, Layout, Code2, ZapOff, Loader2,
   FileText, ChevronLeft, ChevronRight, Check, X,
   CheckCircle2, ArrowLeft, Download, Folder,
   File as FileIcon, Sparkles,
@@ -10,7 +10,7 @@ import { Project, AnalysisResult, IssueCategory, AnalysisIssue } from '../../sha
 import { LogoMark } from '../../components/Logo'
 import type { Phase, Decision } from './types'
 import { getProject, saveDecision, getDecisionHistory } from '../../lib/db'
-import { explainIssue, refactorIssue, generateBriefing, RateLimitError } from '../../lib/api'
+import { explainIssue, refactorIssue, generateBriefing, RateLimitError, cloneGitHubRepo } from '../../lib/api'
 import { useFiles } from '../../context/FilesContext'
 import type { TransformProposal } from '../../engine/types'
 
@@ -342,6 +342,24 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const { fileMap, setFileMap, loadFilesForProject } = useFiles()
   const workerRef = useRef<Worker | null>(null)
   const refactorWorkerRef = useRef<Worker | null>(null)
+
+  const [recloning, setRecloning] = useState(false)
+  const [recloneError, setRecloneError] = useState<string | null>(null)
+
+  const handleReclone = async () => {
+    if (!project || !project.repo) return
+    setRecloning(true)
+    setRecloneError(null)
+    try {
+      const result = await cloneGitHubRepo(project.repo, project.branch ?? 'main')
+      setFileMap(new Map(Object.entries(result.files)))
+    } catch (err) {
+      console.error('Failed to re-clone repository:', err)
+      setRecloneError(err instanceof Error ? err.message : 'Failed to re-clone repository.')
+    } finally {
+      setRecloning(false)
+    }
+  }
 
   const files = React.useMemo(() =>
     Array.from(fileMap.keys()).map(path => ({
@@ -987,13 +1005,63 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   if (project && fileMap.size === 0) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: C.bg, gap: 20, padding: 24 }}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } } .spin { animation: spin 1s linear infinite; }`}</style>
         <ZapOff size={48} color={C.muted} style={{ marginBottom: 8 }} />
-        <p style={{ fontSize: 16, color: 'var(--foreground)', fontWeight: 500, textAlign: 'center' }}>
-          Ficheiros não encontrados — clona o repositório novamente
+        <h2 style={{ fontSize: 20, color: 'var(--foreground)', fontWeight: 500, textAlign: 'center', margin: 0 }}>
+          Repository files not loaded
+        </h2>
+        <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 400, margin: '0 0 8px', lineHeight: 1.5 }}>
+          The files for this project are not in local storage. Re-clone the repository to continue.
         </p>
-        <button onClick={onBack} className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <ArrowLeft size={14} /> Voltar
-        </button>
+        
+        {recloneError && (
+          <div style={{
+            background: 'rgba(255, 91, 79, 0.08)',
+            border: '1px solid rgba(255, 91, 79, 0.18)',
+            borderRadius: '8px',
+            color: '#ff7f76',
+            fontSize: 13,
+            lineHeight: 1.5,
+            padding: '10px 14px',
+            maxWidth: 400,
+            textAlign: 'center',
+            marginBottom: 8
+          }}>
+            {recloneError}
+          </div>
+        )}
+
+        {project.repo ? (
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button
+              onClick={handleReclone}
+              className="btn btn-primary"
+              disabled={recloning}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 180, justifyContent: 'center' }}
+            >
+              {recloning ? (
+                <>
+                  <Loader2 size={14} className="spin" />
+                  Re-cloning...
+                </>
+              ) : (
+                'Re-clone Repository'
+              )}
+            </button>
+            <button
+              onClick={onBack}
+              className="btn btn-secondary"
+              disabled={recloning}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+            >
+              <ArrowLeft size={14} /> Back
+            </button>
+          </div>
+        ) : (
+          <button onClick={onBack} className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <ArrowLeft size={14} /> Back
+          </button>
+        )}
       </div>
     )
   }
