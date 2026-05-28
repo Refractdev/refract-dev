@@ -68,8 +68,8 @@ function validateProposal(proposal: TransformProposal, fileMap: Map<string, stri
 
   return {
     passed: syntaxOk && importsResolved,
+    syntaxOk,
     typecheck: syntaxOk && propsOk,
-    importsResolved,
     errors,
     warnings,
   }
@@ -119,7 +119,7 @@ function validatePropsConsistency(source: string, filePath: string): { ok: boole
       },
     })
 
-    if (warnings.length > 0) ok = true
+    if (warnings.length > 0) ok = false
     return { ok, warnings }
   } catch {
     return { ok: false, warnings: [`${filePath}: props consistency check could not parse the file.`] }

@@ -16,8 +16,9 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import dagre from 'dagre'
-import { FileCode, FileText, Package, AlertTriangle, CheckCircle, AlertCircle } from 'lucide-react'
+import { FileCode, FileText, Package, AlertTriangle, CheckCircle, AlertCircle, ExternalLink, Activity, Info, TrendingUp } from 'lucide-react'
 import type { AnalysisIssue } from '../../shared/types'
+import type { Decision } from './types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const C = {
@@ -25,21 +26,20 @@ const C = {
   surface: '#111111',
   border: '#1a1a1a',
   blue: '#3B82F6',
-  muted: '#444444',
+  muted: '#888888',
   text: '#ffffff',
   green: '#4ade80',
   yellow: '#facc15',
   red: '#ef4444',
+  subtle: '#161616',
 }
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  // Aumentado ranksep e nodesep para os nós "respirarem"
   g.setGraph({ rankdir: 'TB', ranksep: 120, nodesep: 80 })
 
-  // Usando dimensões mais próximas da realidade do componente renderizado
   nodes.forEach(n => g.setNode(n.id, { width: 220, height: 80 }))
   edges.forEach(e => g.setEdge(e.source, e.target))
 
@@ -157,53 +157,208 @@ const FileNode = ({ data }: { data: any }) => {
   )
 }
 
+interface BlastRadiusInfo {
+  level1: number
+  level2: number
+  total: number
+}
+
 // ─── Internal Component ───────────────────────────────────────────────────────
-const CodeMapInner: React.FC<CodeMapProps> = ({ projectPath, issues }) => {
+const CodeMapInner: React.FC<CodeMapProps & {
+  decisions?: Record<string, Decision>
+  onAcceptIssue?: (issue: AnalysisIssue) => void
+  onRejectIssue?: (issue: AnalysisIssue) => void
+}> = ({ projectPath, issues, dependencies, onNavigateToIssue, decisions = {}, onAcceptIssue, onRejectIssue }) => {
   const { fitView } = useReactFlow()
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [selectedIssues, setSelectedIssues] = useState<AnalysisIssue[]>([])
+  const [blastRadiusInfo, setBlastRadiusInfo] = useState<BlastRadiusInfo | null>(null)
   const [unresolvedCount, setUnresolvedCount] = useState(0)
   const [truncated, setTruncated] = useState(false)
 
   const nodeTypes = useMemo(() => ({ file: FileNode }), [])
 
+  // Build Chronological Snapshots layout
   useEffect(() => {
-    if (!projectPath) return
-    setLoading(true)
-    setError(null)
-    setSelectedFile(null)
-    setUnresolvedCount(0)
-    setTruncated(false)
+    if (!dependencies || Object.keys(dependencies).length === 0) return
 
-    // Dependency analysis not available in web version yet
-    // Requires file system access to parse imports
-    setError('Mapa de dependências não disponível na versão web.')
-    setLoading(false)
-  }, [projectPath])
+    const nodeList: Node[] = []
+    const edgeList: Edge[] = []
+    const seen = new Set<string>()
+    let unresolved = 0
+
+    for (const [source, targets] of Object.entries(dependencies)) {
+      if (!seen.has(source)) {
+        const health = getHealth(source, issues, projectPath || '')
+        const fileIssues = getFileIssues(source, issues, projectPath || '')
+        seen.add(source)
+        nodeList.push({
+          id: source,
+          type: 'file',
+          position: { x: 0, y: 0 },
+          data: { label: source, health, issueCount: fileIssues.length, selected: false, isolated: false },
+        })
+      }
+      for (const target of targets) {
+        if (!target) { unresolved++; continue }
+        if (!seen.has(target)) {
+          const health = getHealth(target, issues, projectPath || '')
+          const fileIssues = getFileIssues(target, issues, projectPath || '')
+          seen.add(target)
+          nodeList.push({
+            id: target,
+            type: 'file',
+            position: { x: 0, y: 0 },
+            data: { label: target, health, issueCount: fileIssues.length, selected: false, isolated: false },
+          })
+        }
+        edgeList.push({
+          id: `${source}->${target}`,
+          source,
+          target,
+          style: { stroke: '#333', strokeWidth: 1, opacity: 0.8 },
+        })
+      }
+    }
+
+    const laidOut = applyDagreLayout(nodeList, edgeList)
+    setNodes(laidOut)
+    setEdges(edgeList)
+    setUnresolvedCount(unresolved)
+    if (seen.size > 200) setTruncated(true)
+  }, [dependencies, issues, projectPath])
+
+  const buildReverseMap = useCallback((deps: Record<string, string[]>): Map<string, string[]> => {
+    const rev = new Map<string, string[]>()
+    for (const [src, targets] of Object.entries(deps)) {
+      for (const t of targets) {
+        if (!rev.has(t)) rev.set(t, [])
+        rev.get(t)!.push(src)
+      }
+    }
+    return rev
+  }, [])
+
+  // Programmatic select node + Blast Radius flow highlighting + Focus viewport
+  const selectFileNode = useCallback((fileId: string) => {
+    const fileIssues = projectPath ? getFileIssues(fileId, issues, projectPath) : []
+    setSelectedFile(fileId)
+    setSelectedIssues(fileIssues)
+
+    if (dependencies) {
+      const reverseDeps = buildReverseMap(dependencies)
+      const level1 = reverseDeps.get(fileId) ?? []
+      const level2 = level1.flatMap(f => reverseDeps.get(f) ?? [])
+      const affected = new Set([fileId, ...level1, ...level2])
+
+      setBlastRadiusInfo({
+        level1: level1.length,
+        level2: level2.length,
+        total: affected.size,
+      })
+
+      // Dim isolated nodes
+      setNodes((ns) => ns.map((n) => ({
+        ...n,
+        data: { ...n.data, selected: n.id === fileId, isolated: !affected.has(n.id) },
+      })))
+
+      // Map dynamic visual flow along active blast radius path with flow animations
+      const activeEdges = new Set<string>()
+      for (const l1 of level1) {
+        activeEdges.add(`${l1}->${fileId}`)
+      }
+      for (const l1 of level1) {
+        const l2s = reverseDeps.get(l1) ?? []
+        for (const l2 of l2s) {
+          activeEdges.add(`${l2}->${l1}`)
+        }
+      }
+
+      setEdges((es) => es.map((e) => {
+        const isActive = activeEdges.has(e.id)
+        const isImpactCritical = fileIssues.some(i => i.impact === 'High')
+        const glowColor = isImpactCritical ? C.red : C.yellow
+        return {
+          ...e,
+          style: {
+            ...e.style,
+            stroke: isActive ? glowColor : '#333',
+            strokeWidth: isActive ? 2.5 : 1,
+            opacity: isActive ? 1 : 0.15,
+          },
+          animated: isActive,
+        }
+      }))
+    } else {
+      setBlastRadiusInfo(null)
+      setNodes((ns) => ns.map((n) => ({
+        ...n,
+        data: { ...n.data, selected: n.id === fileId, isolated: false },
+      })))
+      setEdges((es) => es.map((e) => ({
+        ...e,
+        style: { ...e.style, stroke: '#333', strokeWidth: 1, opacity: 0.8 },
+        animated: false,
+      })))
+    }
+
+    // Centering with animation using React Flow fitView
+    setTimeout(() => {
+      fitView({ nodes: [{ id: fileId } as Node], duration: 800, maxZoom: 1 })
+    }, 50)
+  }, [issues, projectPath, setNodes, setEdges, dependencies, buildReverseMap, fitView])
 
   const onNodeClick = useCallback((_: any, node: Node) => {
-    const fileIssues = projectPath ? getFileIssues(node.id, issues, projectPath) : []
-    setSelectedFile(node.id)
-    setSelectedIssues(fileIssues)
+    selectFileNode(node.id)
+  }, [selectFileNode])
+
+  // Reset graph selection
+  const clearSelection = useCallback(() => {
+    setSelectedFile(null)
+    setSelectedIssues([])
+    setBlastRadiusInfo(null)
     setNodes((ns) => ns.map((n) => ({
       ...n,
-      data: { ...n.data, selected: n.id === node.id },
+      data: { ...n.data, selected: false, isolated: false },
     })))
-  }, [issues, projectPath, setNodes])
+    setEdges((es) => es.map((e) => ({
+      ...e,
+      style: { ...e.style, stroke: '#333', strokeWidth: 1, opacity: 0.8 },
+      animated: false,
+    })))
+    fitView({ duration: 800 })
+  }, [setNodes, setEdges, fitView])
 
-  if (loading) return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, color: C.muted, fontSize: 12 }}>
-      A mapear dependências...
-    </div>
-  )
+  // Calculate Architectural Hotspots when selectedFile === null
+  const hotspots = useMemo(() => {
+    if (nodes.length === 0) return []
+    const list = nodes.map(node => {
+      const fileIssues = projectPath ? getFileIssues(node.id, issues, projectPath) : []
+      const high = fileIssues.filter(i => i.impact === 'High').length
+      const medium = fileIssues.filter(i => i.impact === 'Medium').length
+      const low = fileIssues.filter(i => i.impact === 'Low').length
+      const score = (high * 3) + (medium * 2) + (low * 1)
+      return {
+        id: node.id,
+        label: String(node.data?.label || ''),
+        issues: fileIssues,
+        score,
+        high,
+        medium,
+        low,
+      }
+    })
+    return list.filter(h => h.score > 0).sort((a, b) => b.score - a.score).slice(0, 5)
+  }, [nodes, issues, projectPath])
 
-  if (error) return (
+  const isEmpty = !dependencies || Object.keys(dependencies).length === 0
+
+  if (isEmpty) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, color: C.muted, fontSize: 12 }}>
-      {error}
+      Nenhum grafo de dependências disponível.
     </div>
   )
 
@@ -231,24 +386,202 @@ const CodeMapInner: React.FC<CodeMapProps> = ({ projectPath, issues }) => {
         <MiniMap style={{ background: C.surface, border: `1px solid ${C.border}` }} nodeColor={(n: any) => HEALTH_COLOR[n.data.health as Health]} />
       </ReactFlow>
 
-      {/* Selected Side Panel */}
-      {selectedFile && (
-        <div style={{ position: 'absolute', top: 16, right: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, width: 280, zIndex: 100, boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-          <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>File</p>
-          <p style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 12, wordBreak: 'break-all' }}>{selectedFile}</p>
-          
-          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-            {selectedIssues.length === 0 ? (
-              <p style={{ fontSize: 11, color: C.green }}>✓ Clean file</p>
-            ) : (
-              selectedIssues.map(i => (
-                <div key={i.id} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: i.impact === 'High' ? C.red : C.yellow, marginTop: 4, flexShrink: 0 }} />
-                  <p style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4 }}>{i.problem}</p>
+      {/* Selected Node Sidebar Panel */}
+      {selectedFile ? (
+        <div style={{ position: 'absolute', top: 16, right: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, width: 300, zIndex: 100, boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100% - 32px)', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1 }}>Selected File</span>
+            <button 
+              onClick={clearSelection}
+              style={{ background: 'none', border: 'none', color: C.blue, fontSize: 11, cursor: 'pointer', padding: 0 }}
+            >
+              Clear
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 12, wordBreak: 'break-all', fontFamily: 'monospace' }}>{selectedFile}</p>
+
+          {/* Blast Radius Info */}
+          {blastRadiusInfo && (
+            <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginBottom: 12 }}>
+              <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Blast Radius de Impacto</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{blastRadiusInfo.level1}</span>
+                  <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>1º Nível (direto)</p>
                 </div>
-              ))
+                <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{blastRadiusInfo.level2}</span>
+                  <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>2º Nível (indireto)</p>
+                </div>
+              </div>
+              <p style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 6 }}>
+                {blastRadiusInfo.total} ficheiro(s) afetados
+              </p>
+            </div>
+          )}
+          
+          {/* Real Workspace Actions & Issues List */}
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+            <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Issues no Ficheiro</p>
+            
+            {selectedIssues.length === 0 ? (
+              <div style={{ background: 'rgba(74,222,128,0.05)', border: `1px solid ${C.green}20`, borderRadius: 6, padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CheckCircle size={14} color={C.green} />
+                <span style={{ fontSize: 11, color: C.green, fontWeight: 500 }}>Ficheiro limpo de anomalias</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {selectedIssues.map(i => {
+                  const decision = decisions[i.id]
+                  return (
+                    <div key={i.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, background: '#161616', border: `1px solid ${C.border}`, borderRadius: 6, padding: 10 }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: i.impact === 'High' ? C.red : C.yellow, marginTop: 4, flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4, margin: 0 }}>{i.problem}</p>
+                          <p style={{ fontSize: 9, color: C.muted, fontFamily: 'monospace', margin: '2px 0 0 0' }}>L{i.lineStart}–{i.lineEnd} · {i.impact}</p>
+                        </div>
+                      </div>
+                      
+                      {/* Real decisions accept/reject buttons */}
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
+                        {decision ? (
+                          <span style={{ 
+                            fontSize: 10, 
+                            fontWeight: 600, 
+                            color: decision === 'accepted' ? C.green : C.red,
+                            background: decision === 'accepted' ? 'rgba(74,222,128,0.1)' : 'rgba(239,68,68,0.1)',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                          }}>
+                            {decision === 'accepted' ? '✓ Aceite' : '✗ Rejeitado'}
+                          </span>
+                        ) : (
+                          <>
+                            {onAcceptIssue && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onAcceptIssue(i) }}
+                                style={{ 
+                                  background: 'rgba(74,222,128,0.1)', 
+                                  border: `1px solid ${C.green}40`, 
+                                  color: C.green,
+                                  borderRadius: 4, 
+                                  padding: '2px 8px', 
+                                  cursor: 'pointer', 
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  transition: 'all 0.12s ease'
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(74,222,128,0.2)' }}
+                                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(74,222,128,0.1)' }}
+                              >
+                                Aceitar
+                              </button>
+                            )}
+                            {onRejectIssue && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onRejectIssue(i) }}
+                                style={{ 
+                                  background: 'rgba(239,68,68,0.1)', 
+                                  border: `1px solid ${C.red}40`, 
+                                  color: C.red,
+                                  borderRadius: 4, 
+                                  padding: '2px 8px', 
+                                  cursor: 'pointer', 
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  transition: 'all 0.12s ease'
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)' }}
+                                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)' }}
+                              >
+                                Rejeitar
+                              </button>
+                            )}
+                          </>
+                        )}
+                        
+                        {onNavigateToIssue && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onNavigateToIssue(i.id) }}
+                            style={{ marginLeft: 'auto', background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, padding: '2px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, transition: 'all 0.12s ease' }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = C.blue; e.currentTarget.style.color = C.blue }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.muted }}
+                          >
+                            <ExternalLink size={9} color={C.muted} />
+                            <span style={{ fontSize: 9, color: C.muted }}>View</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
+        </div>
+      ) : (
+        /* Architectural Risk Dashboard Sidebar (overview initial state) */
+        <div style={{ position: 'absolute', top: 16, right: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, width: 300, zIndex: 100, boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100% - 32px)', overflowY: 'auto' }}>
+          <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>Architectural Overview</p>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+            <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{nodes.length}</span>
+              <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>Ficheiros</p>
+            </div>
+            <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{edges.length}</span>
+              <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>Relações</p>
+            </div>
+          </div>
+
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Issues Ativos</p>
+              <Activity size={12} color={issues.length > 0 ? C.yellow : C.green} />
+            </div>
+            <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: issues.length > 0 ? C.yellow : C.green }}>{issues.length}</span>
+              <span style={{ fontSize: 10, color: C.muted }}>anomalias ativas</span>
+            </div>
+          </div>
+
+          {hotspots.length > 0 && (
+            <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Hotspots de Risco</p>
+                <TrendingUp size={12} color={C.red} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {hotspots.map(h => {
+                  const fileName = path.basename(h.label)
+                  return (
+                    <div key={h.id} 
+                      onClick={() => selectFileNode(h.id)}
+                      style={{ background: '#111', border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.12s ease' }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.borderColor = C.blue
+                        e.currentTarget.style.background = '#141414'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = C.border
+                        e.currentTarget.style.background = '#111'
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
+                        <p style={{ fontSize: 11, color: C.text, margin: 0, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileName}</p>
+                        <p style={{ fontSize: 9, color: C.muted, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{h.label}</p>
+                      </div>
+                      <span style={{ fontSize: 10, color: h.high > 0 ? C.red : C.yellow, fontWeight: 700, background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
+                        {h.issues.length}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -259,9 +592,15 @@ const CodeMapInner: React.FC<CodeMapProps> = ({ projectPath, issues }) => {
 interface CodeMapProps {
   projectPath?: string
   issues: AnalysisIssue[]
+  dependencies?: Record<string, string[]>
+  onNavigateToIssue?: (issueId: string) => void
 }
 
-export const CodeMap: React.FC<CodeMapProps> = (props) => (
+export const CodeMap: React.FC<CodeMapProps & {
+  decisions?: Record<string, Decision>
+  onAcceptIssue?: (issue: AnalysisIssue) => void
+  onRejectIssue?: (issue: AnalysisIssue) => void
+}> = (props) => (
   <ReactFlowProvider>
     <CodeMapInner {...props} />
   </ReactFlowProvider>
