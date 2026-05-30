@@ -116,7 +116,19 @@ export function detectOversized(pf: ParsedFile): Issue[] {
         const propsInterface = propsUsed.length > 0
           ? `interface ${compPropsName} {\n${propsUsed.map(p => `  ${p}: any;`).join('\n')}\n}\n\n`
           : '';
-        const afterText = `${propsInterface}const ${newCompName} = ({ ${propsUsed.join(', ')} }: ${propsUsed.length > 0 ? compPropsName : '{}'}) => {\n  return (\n    // Extraído do sub-renderer\n  );\n};`;
+
+        const suggestedLines = [...codeLines];
+        const firstLine = suggestedLines[0] ?? '';
+        const functionDeclPattern = new RegExp(`^(\\s*)(?:export\\s+)?function\\s+${name}\\b`);
+        const variableDeclPattern = new RegExp(`^(\\s*)(?:export\\s+)?(?:const|let|var)\\s+${name}\\b`);
+
+        if (subNode.type === 'FunctionDeclaration') {
+          suggestedLines[0] = firstLine.replace(functionDeclPattern, `$1export function ${newCompName}`);
+        } else {
+          suggestedLines[0] = firstLine.replace(variableDeclPattern, `$1export const ${newCompName}`);
+        }
+
+        const afterText = `${propsInterface}// Sugestao AST: extrair este sub-renderer para um componente proprio\n${suggestedLines.join('\n')}`;
 
         issues.push({
           id: `oversized-subrenderer-${pf.filePath}-${start}`,

@@ -117,7 +117,8 @@ export async function generateBriefing(
   projectPath: string,
   issues: AnalysisIssue[],
   scannedFiles: string[],
-  guidelines?: string
+  guidelines?: string,
+  language?: string
 ): Promise<string> {
   const accessToken = await getAccessToken()
 
@@ -127,7 +128,7 @@ export async function generateBriefing(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ projectPath, issues, scannedFiles, guidelines }),
+    body: JSON.stringify({ projectPath, issues, scannedFiles, guidelines, language }),
   })
 
   const data = await readResponse<{ briefing: string }>(response, 'Failed to generate briefing')
@@ -200,6 +201,24 @@ export async function fetchDriftReport(projectId: string): Promise<DriftReport> 
 }
 
 // ─── Codemap API ─────────────────────────────────────────────────────────────
+
+export interface GitHubCommit {
+  sha: string
+  message: string
+  author: string
+  date: string
+  url: string
+}
+
+export async function fetchProjectCommits(repoUrl: string | null | undefined): Promise<GitHubCommit[]> {
+  if (!repoUrl) return []
+  const accessToken = await getAccessToken()
+  const response = await fetch(`/api/github/commits?repoUrl=${encodeURIComponent(repoUrl)}`, {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  })
+  if (!response.ok) return []
+  return response.json()
+}
 
 export async function getProjectDependencies(projectPath: string): Promise<{ dependencies: any[]; allFiles: string[] }> {
   // This will be handled by the worker, no backend needed

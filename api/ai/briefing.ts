@@ -3,6 +3,44 @@ import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' })
 
+const BRIEFING_PROMPTS: Record<string, { system: string; label: string }> = {
+  en: {
+    system: `You are Refract, a code quality assistant.
+Generate a short briefing (max 3 sentences) about the analyzed project state.
+Mention the most critical problems found and the overall impact.
+Always respond in English. Direct tone, no fluff.`,
+    label: 'English',
+  },
+  pt: {
+    system: `És o Refract, um assistente de qualidade de código.
+Gera um briefing curto (máximo 3 frases) sobre o estado do projeto analisado.
+Menciona os problemas mais críticos encontrados e o impacto geral.
+Responde sempre em português europeu. Tom direto, sem floreados.`,
+    label: 'Português europeu',
+  },
+  es: {
+    system: `Eres Refract, un asistente de calidad de código.
+Genera un briefing breve (máximo 3 frases) sobre el estado del proyecto analizado.
+Menciona los problemas más críticos encontrados y el impacto general.
+Responde siempre en español. Tono directo, sin adornos.`,
+    label: 'Español',
+  },
+  fr: {
+    system: `Vous êtes Refract, un assistant de qualité de code.
+Générez un bref résumé (3 phrases maximum) sur l'état du projet analysé.
+Mentionnez les problèmes les plus critiques et l'impact global.
+Répondez toujours en français. Ton direct, sans fioritures.`,
+    label: 'Français',
+  },
+  de: {
+    system: `Du bist Refract, ein Assistent für Codequalität.
+Erstelle ein kurzes Briefing (maximal 3 Sätze) über den Zustand des analysierten Projekts.
+Nenne die kritischsten Probleme und die Gesamtauswirkungen.
+Antworte immer auf Deutsch. Direkt, ohne Floskeln.`,
+    label: 'Deutsch',
+  },
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -14,7 +52,7 @@ export default async function handler(req: any, res: any) {
     return res.status(401).json({ error: error.message || 'Unauthorized' })
   }
 
-  const { projectPath, issues, scannedFiles, guidelines } = req.body
+  const { projectPath, issues, scannedFiles, guidelines, language } = req.body
 
   const total = issues.length
   const high = issues.filter((i: any) => i.impact === 'High').length
@@ -27,10 +65,10 @@ export default async function handler(req: any, res: any) {
     .map((i: any) => `- ${i.category}: ${i.problem}`)
     .join('\n')
 
-  const systemPrompt = `És o Refract, um assistente de qualidade de código.
-Gera um briefing curto (máximo 3 frases) sobre o estado do projeto analisado.
-Menciona os problemas mais críticos encontrados e o impacto geral.
-Responde sempre em português europeu. Tom direto, sem floreados.`
+  const briefingLocale = typeof language === 'string' && BRIEFING_PROMPTS[language]
+    ? language
+    : 'en'
+  const systemPrompt = BRIEFING_PROMPTS[briefingLocale].system
 
   const userPrompt = `Projeto: ${projectPath}
 Ficheiros analisados: ${scannedFiles.length}

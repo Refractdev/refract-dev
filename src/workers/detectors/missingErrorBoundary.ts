@@ -95,13 +95,45 @@ export function detectMissingErrorBoundary(pf: ParsedFile): Issue[] {
 
     if (!hasErrorState || !isErrorRendered) {
       const compStart = lineOf(compNode);
-      const firstLineText = pf.lines[compStart - 1] ?? '';
-      const fixedText = `// Adiciona o estado de erro e tratamento visual condicional no JSX\n` +
-        `const [error, setError] = useState<Error | null>(null);\n` +
-        `// ...\n` +
-        `if (error) return <div>Ocorreu um erro: {error.message}</div>;\n` +
-        `// ...\n` +
-        firstLineText;
+      const compEnd = endLineOf(compNode);
+      const beforeLines = pf.lines.slice(compStart - 1, compEnd);
+      const afterLines = [...beforeLines];
+      let insertedLines = 0;
+
+      if (!hasErrorState) {
+        const stateLine = `  const [error, setError] = useState<Error | null>(null);`;
+        const insertAt = afterLines.length > 1 ? 1 : afterLines.length;
+        afterLines.splice(insertAt, 0, stateLine);
+        insertedLines += 1;
+      }
+
+      if (!isErrorRendered) {
+        let firstJsxReturnLine: number | null = null;
+        walk(compNode, {
+          ReturnStatement(node: any) {
+            if (firstJsxReturnLine !== null) return;
+            const arg = node.argument;
+            if (!arg) return;
+            if (arg.type === 'JSXElement' || arg.type === 'JSXFragment') {
+              firstJsxReturnLine = lineOf(node);
+            }
+          },
+          FunctionDeclaration(_node, skip) { skip?.() },
+          FunctionExpression(_node, skip) { skip?.() },
+          ArrowFunctionExpression(_node, skip) { skip?.() },
+        });
+
+        const guardLine = `  if (error) return <div role=\"alert\">Ocorreu um erro: {error.message}</div>;`;
+        if (firstJsxReturnLine !== null) {
+          const guardIndex = Math.max(0, firstJsxReturnLine - compStart + insertedLines);
+          afterLines.splice(guardIndex, 0, guardLine);
+        } else {
+          afterLines.push(guardLine);
+        }
+      }
+
+      const afterText = afterLines.join('\n');
+      const beforeText = beforeLines.join('\n');
 
       issues.push({
         id: `missing-error-boundary-${pf.filePath}-${compStart}`,
@@ -111,9 +143,9 @@ export function detectMissingErrorBoundary(pf: ParsedFile): Issue[] {
         problem: `Componente \`${compName}\` realiza operações assíncronas mas não tem tratamento de erros visível para o utilizador (estado de erro ou JSX condicional)`,
         impact: 'Medium',
         lineStart: compStart,
-        lineEnd: compStart,
-        lines: { before: [firstLineText], after: [fixedText] },
-        patch: { before: firstLineText, after: fixedText },
+        lineEnd: compEnd,
+        lines: { before: beforeLines, after: afterLines },
+        patch: { before: beforeText, after: afterText },
       });
     }
   }

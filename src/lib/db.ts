@@ -194,6 +194,50 @@ export async function getHealthSnapshots(projectId: string, userId: string, limi
   return data || []
 }
 
+export async function persistProjectHealth(
+  projectId: string,
+  summary: { total: number; high: number; medium: number; low: number },
+  status: Project['status'] = 'Refracted'
+): Promise<HealthSnapshot | null> {
+  const score = Math.max(0, Math.min(100,
+    100 - (summary.high * 10) - (summary.medium * 4) - (summary.low * 1)
+  ))
+
+  const timestamp = new Date().toISOString()
+
+  const { data: snapshot, error: snapshotError } = await withTimeout(
+    supabase
+      .from('health_snapshots')
+      .insert({
+        project_id: projectId,
+        score,
+        issue_count: summary.total,
+        high: summary.high,
+        medium: summary.medium,
+        low: summary.low,
+        timestamp,
+      })
+      .select('*')
+      .single()
+  )
+
+  if (snapshotError) throw snapshotError
+
+  const { error: projectError } = await withTimeout(
+    supabase
+      .from('projects')
+      .update({
+        last_run: timestamp,
+        status,
+      })
+      .eq('id', projectId)
+  )
+
+  if (projectError) throw projectError
+
+  return snapshot
+}
+
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 export async function getSetting(key: string, fallback = ''): Promise<string> {

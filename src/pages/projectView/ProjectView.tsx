@@ -9,11 +9,12 @@ import {
 import { Project, AnalysisResult, IssueCategory, AnalysisIssue } from '../../shared/types'
 import { LogoMark } from '../../components/Logo'
 import type { Phase, Decision } from './types'
-import { getProject, saveDecision, getDecisionHistory, getSetting } from '../../lib/db'
+import { getProject, saveDecision, getDecisionHistory, getSetting, persistProjectHealth } from '../../lib/db'
 import { explainIssue, generateBriefing, RateLimitError, cloneGitHubRepo, validateProposalSafety, createGitHubPullRequest } from '../../lib/api'
 import { useFiles } from '../../context/FilesContext'
 import type { TransformProposal, SafetyResult } from '../../engine/types'
 import { CodeMap } from './CodeMap'
+import { useTranslation } from '../../hooks/useTranslation'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const C = {
@@ -90,6 +91,7 @@ const SideBySideDiff: React.FC<{
   issue: AnalysisIssue
   loading: boolean
 }> = ({ issue, loading }) => {
+  const { t } = useTranslation()
   const beforeLines = issue.lines.before || []
   const afterLines = issue.lines.after || []
 
@@ -99,11 +101,19 @@ const SideBySideDiff: React.FC<{
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, borderBottom: `1px solid ${C.border}`, paddingBottom: 10, marginBottom: 12 }}>
         <div style={{ fontSize: 11, textTransform: 'uppercase', color: C.muted, letterSpacing: '0.08em', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.red }} />
-          Original
+          {t('projectView.original')}
         </div>
-        <div style={{ fontSize: 11, textTransform: 'uppercase', color: C.muted, letterSpacing: '0.08em', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.green }} />
-          Refatorado
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', color: C.muted, letterSpacing: '0.08em', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.green }} />
+            {t('projectView.refactored')}
+          </div>
+          {loading && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, color: C.muted }}>
+              <Loader2 size={11} className="animate-spin" />
+              {t('projectView.diffLoading')}
+            </div>
+          )}
         </div>
       </div>
 
@@ -177,9 +187,12 @@ const getFileContentForIssue = (filePath: string, fileMap: Map<string, string>) 
 }
 
 // ─── Analysing panel ──────────────────────────────────────────────────────────
-const AnalysingPanel: React.FC<{ files: any[]; scannedFiles: string[]; activeFile: string | null }> = ({ files, scannedFiles, activeFile }) => (
+const AnalysingPanel: React.FC<{ files: any[]; scannedFiles: string[]; activeFile: string | null }> = ({ files, scannedFiles, activeFile }) => {
+  const { t } = useTranslation()
+
+  return (
   <div style={{ padding: '24px', width: '100%' }}>
-    <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>A analisar ficheiros do projecto...</p>
+    <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>{t('projectView.analysingFiles')}</p>
     <style>{'@keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }'}</style>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {files.filter(f => !f.isDirectory).map(f => {
@@ -200,10 +213,12 @@ const AnalysingPanel: React.FC<{ files: any[]; scannedFiles: string[]; activeFil
       })}
     </div>
   </div>
-)
+  )
+}
 
 // ─── Briefing panel ───────────────────────────────────────────────────────────
 const BriefingPanel: React.FC<{ text: string; onStart: () => void }> = ({ text, onStart }) => {
+  const { t } = useTranslation()
   const [displayed, setDisplayed] = useState('')
   const [done, setDone] = useState(false)
 
@@ -238,7 +253,7 @@ const BriefingPanel: React.FC<{ text: string; onStart: () => void }> = ({ text, 
           className="btn btn-primary"
           style={{ letterSpacing: '-0.02em' }}
         >
-          {'Começar a rever ->'}
+          {t('projectView.startReview')}
         </button>
       )}
     </div>
@@ -256,6 +271,7 @@ const SuccessState: React.FC<{
   creatingPR?: boolean
   prUrl?: string | null
 }> = ({ summary, decisions, issues, project, onReviewAgain, onCreatePR, creatingPR, prUrl }) => {
+  const { t, lang } = useTranslation()
 
   const acceptedIssues = issues.filter((issue) => decisions[issue.id] === 'accepted')
   const acceptedCount = acceptedIssues.length
@@ -307,17 +323,19 @@ const SuccessState: React.FC<{
   }
 
   const metrics = [
-    { label: 'Issues encontrados', value: summary.total },
-    { label: 'Aceites',            value: acceptedCount  },
-    { label: 'Rejeitados',         value: rejected       },
-    { label: 'High impact',        value: summary.high  },
+    { label: lang === 'pt' ? 'Issues encontrados' : 'Issues found', value: summary.total },
+    { label: lang === 'pt' ? 'Aceites' : 'Accepted', value: acceptedCount },
+    { label: lang === 'pt' ? 'Rejeitados' : 'Rejected', value: rejected },
+    { label: 'High impact', value: summary.high },
   ]
 
   return (
     <div style={{ padding: '40px 32px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
       <CheckCircle2 size={32} color="var(--primary)" style={{ marginBottom: 16 }} />
-      <h2 className="page-title" style={{ marginBottom: 6 }}>Refract completo.</h2>
-      <p style={{ fontSize: 16, color: 'var(--muted-foreground)', marginBottom: 32 }}>Revisaste {Object.keys(decisions).length} sugestões.</p>
+      <h2 className="page-title" style={{ marginBottom: 6 }}>{t('projectView.completeTitle')}</h2>
+      <p style={{ fontSize: 16, color: 'var(--muted-foreground)', marginBottom: 32 }}>
+        {t('projectView.completeSubtitle', { count: String(Object.keys(decisions).length) })}
+      </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, width: '100%', marginBottom: 36 }}>
         {metrics.map(m => (
@@ -333,27 +351,27 @@ const SuccessState: React.FC<{
           <button onClick={onCreatePR} className="btn btn-primary" style={{ gap: 8 }} disabled={creatingPR}>
             {creatingPR ? (
               <>
-                <Loader2 size={14} className="animate-spin" /> A criar PR...
+                <Loader2 size={14} className="animate-spin" /> {lang === 'pt' ? 'A criar PR...' : 'Creating PR...'}
               </>
             ) : (
               <>
-                <GitBranch size={14} /> Create PR
+                <GitBranch size={14} /> {lang === 'pt' ? 'Criar PR' : 'Create PR'}
               </>
             )}
           </button>
         )}
         {prUrl && (
           <a href={prUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ gap: 8 }}>
-            <GitBranch size={14} /> Abrir PR no GitHub
+            <GitBranch size={14} /> {lang === 'pt' ? 'Abrir PR no GitHub' : 'Open PR on GitHub'}
           </a>
         )}
         {acceptedCount > 0 && (
           <button onClick={handleExportChangelog} className="btn btn-ghost" style={{ gap: 8 }}>
-            <Download size={14} /> Export Changelog
+            <Download size={14} /> {lang === 'pt' ? 'Exportar changelog' : 'Export Changelog'}
           </button>
         )}
         <button onClick={onReviewAgain} className="btn btn-ghost">
-          Rever novamente
+          {lang === 'pt' ? 'Rever novamente' : 'Review again'}
         </button>
       </div>
     </div>
@@ -370,6 +388,7 @@ const RefactorProposalList: React.FC<{
   onVerifySafety: (proposal: TransformProposal) => void
   projectPath?: string
 }> = ({ proposals, loading, onApply, onSkip, validatingProposals, safetyResults, onVerifySafety, projectPath }) => {
+  const { t } = useTranslation()
   const [expandedLogs, setExpandedLogs] = useState<Record<string, string | null>>({})
 
   const toggleLog = (proposalId: string, type: string, logContent: string) => {
@@ -384,7 +403,7 @@ const RefactorProposalList: React.FC<{
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
         <Sparkles size={26} color={C.muted} />
-        <p style={{ fontSize: 14, color: C.muted }}>A preparar propostas determinísticas de refactor...</p>
+        <p style={{ fontSize: 14, color: C.muted }}>{t('projectView.preparingRefactor')}</p>
       </div>
     )
   }
@@ -393,7 +412,7 @@ const RefactorProposalList: React.FC<{
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
         <Sparkles size={26} color={C.muted} />
-        <p style={{ fontSize: 14, color: C.muted }}>Não encontrei propostas seguras nesta passagem.</p>
+        <p style={{ fontSize: 14, color: C.muted }}>{t('projectView.noSafeProposals')}</p>
       </div>
     )
   }
@@ -435,7 +454,7 @@ const RefactorProposalList: React.FC<{
             {validating && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, marginBottom: 12, padding: '8px 12px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: 6, border: '1px dashed rgba(59, 130, 246, 0.3)' }}>
                 <Loader2 size={14} className="animate-spin" style={{ color: 'var(--ring)' }} />
-                <span style={{ fontSize: 12, color: C.muted }}>A executar validação física (tsc, build e testes)...</span>
+                <span style={{ fontSize: 12, color: C.muted }}>{t('projectView.validationLoading')}</span>
               </div>
             )}
 
@@ -535,7 +554,7 @@ const RefactorProposalList: React.FC<{
                           onClick={() => toggleLog(proposal.id, type, '')}
                           style={{ background: 'none', border: 'none', color: C.muted, fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}
                         >
-                          Fechar
+                          {t('common.close')}
                         </button>
                       </div>
                       <pre style={{
@@ -598,6 +617,7 @@ const RefactorProposalList: React.FC<{
 export interface ProjectViewProps { projectId: string | null; onBack: () => void }
 
 export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) => {
+  const { t, lang } = useTranslation()
   const [phase, setPhase] = useState<Phase>('idle')
   const { fileMap, setFileMap, loadFilesForProject } = useFiles()
   const workerRef = useRef<Worker | null>(null)
@@ -658,6 +678,17 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [creatingPR, setCreatingPR] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
 
+  const persistProjectAnalysis = async (summary: AnalysisResult['summary']) => {
+    if (!project?.id || project.id.startsWith('local-')) return
+
+    try {
+      await persistProjectHealth(project.id, summary, 'Refracted')
+      setProject((current) => current ? { ...current, last_run: new Date().toISOString(), status: 'Refracted' } : current)
+    } catch (err) {
+      console.error('Failed to persist project analysis health:', err)
+    }
+  }
+
   // Derived
   const allIssues = result?.issues ?? []
   const visibleIssues = selectedCat ? allIssues.filter(i => i.category === selectedCat) : allIssues
@@ -687,6 +718,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     if (explanationCache[currentIssue.id]) {
       setIssueExplanation(explanationCache[currentIssue.id]);
       setLoadingExplanation(false);
+      setLoadingRefactor(false)
       return;
     }
 
@@ -699,6 +731,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
      async function getExplanation() {
        try {
+         setLoadingRefactor(true)
          // Read file from uploaded files
          const fileContent = getFileContentForIssue(currentIssue.filePath, fileMap);
          const fileSource = fileContent ? fileContent.content : '';
@@ -713,6 +746,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
          }
          setIssueExplanation(issueProblem);
        } finally {
+         setLoadingRefactor(false)
          setLoadingExplanation(false);
        }
      }
@@ -875,9 +909,33 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setDecisionHistory(prev => ({ ...prev, [sig]: { decision: 'rejected', created_at: new Date().toISOString() } }))
   }
 
+  const persistRefactorDecision = async (
+    proposal: TransformProposal,
+    decision: 'accepted' | 'rejected',
+    score: number,
+  ) => {
+    if (!project?.id) return
+    try {
+      await saveDecision(project.id, proposal.id, proposal.type, proposal.filePath, proposal.title, decision, score)
+    } catch (error) {
+      console.error(`Failed to persist refactor ${decision} decision`, error)
+    }
+  }
+
+  const applyProposalToMap = (baseMap: Map<string, string>, proposal: TransformProposal) => {
+    const nextMap = new Map(baseMap)
+    if (proposal.movedTo) nextMap.delete(proposal.filePath)
+    nextMap.set(proposal.movedTo ?? proposal.filePath, proposal.after)
+    for (const file of proposal.newFiles ?? []) {
+      nextMap.set(file.path, file.content)
+    }
+    return nextMap
+  }
+
   const handleAcceptAll = async () => {
     if (!project?.id) return
     const all: Record<string, Decision> = {}
+    setLoadingRefactor(true)
     const promises = allIssues.map(async (i) => {
       all[i.id] = 'accepted'
       const sig = await computeSignature(i)
@@ -892,11 +950,15 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     })
     setDecisions(all)
     await Promise.all(promises)
-    runRefactorEngine()
+    runRefactorEngine(true)
   }
 
-  const runRefactorEngine = async () => {
-    if (!refactorWorkerRef.current) return
+  const runRefactorEngine = async (autoApplyAll = false) => {
+    if (!refactorWorkerRef.current) {
+      setLoadingRefactor(false)
+      setLoadingRefactorEngine(false)
+      return
+    }
     setLoadingRefactorEngine(true)
     setRequestError(null)
 
@@ -909,8 +971,36 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       const { type } = event.data
 
       if (type === 'success') {
-        setRefactorProposals(event.data.proposals as TransformProposal[])
+        const proposals = event.data.proposals as TransformProposal[]
+
+        if (autoApplyAll) {
+          const nextMap = proposals.reduce(
+            (map, proposal) => applyProposalToMap(map, proposal),
+            new Map(fileMap),
+          )
+
+          void (async () => {
+            for (const proposal of proposals) {
+              await persistRefactorDecision(proposal, 'accepted', 1)
+            }
+            setFileMap(nextMap)
+            setRefactorProposals([])
+            setPhase('complete')
+            setLoadingRefactor(false)
+            setLoadingRefactorEngine(false)
+          })().catch((error) => {
+            console.error('Failed to auto-apply refactor proposals', error)
+            setRefactorProposals(proposals)
+            setPhase('refactoring')
+            setLoadingRefactor(false)
+            setLoadingRefactorEngine(false)
+          })
+          return
+        }
+
+        setRefactorProposals(proposals)
         setPhase('refactoring')
+        setLoadingRefactor(false)
         setLoadingRefactorEngine(false)
         return
       }
@@ -919,6 +1009,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         console.error('Refactor engine failed', event.data.error)
         setRequestError(event.data.error ?? 'Failed to analyze refactoring proposals.')
         setLoadingRefactorEngine(false)
+        setLoadingRefactor(false)
       }
     }
 
@@ -926,36 +1017,20 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   }
 
   const applyProposalToFileMap = (proposal: TransformProposal) => {
-    const nextMap = new Map(fileMap)
-    if (proposal.movedTo) nextMap.delete(proposal.filePath)
-    nextMap.set(proposal.movedTo ?? proposal.filePath, proposal.after)
-    for (const file of proposal.newFiles ?? []) {
-      nextMap.set(file.path, file.content)
-    }
-    setFileMap(nextMap)
+    setFileMap(applyProposalToMap(fileMap, proposal))
   }
 
   const handleApplyProposal = async (proposal: TransformProposal) => {
     applyProposalToFileMap(proposal)
     setRefactorProposals((current) => current.filter((entry) => entry.id !== proposal.id))
 
-    if (!project?.id) return
-    try {
-      await saveDecision(project.id, proposal.id, proposal.type, proposal.filePath, proposal.title, 'accepted', 1)
-    } catch (error) {
-      console.error('Failed to persist refactor apply decision', error)
-    }
+    await persistRefactorDecision(proposal, 'accepted', 1)
   }
 
   const handleSkipProposal = async (proposal: TransformProposal) => {
     setRefactorProposals((current) => current.filter((entry) => entry.id !== proposal.id))
 
-    if (!project?.id) return
-    try {
-      await saveDecision(project.id, proposal.id, proposal.type, proposal.filePath, proposal.title, 'rejected', 0)
-    } catch (error) {
-      console.error('Failed to persist refactor skip decision', error)
-    }
+    await persistRefactorDecision(proposal, 'rejected', 0)
   }
 
   const handleCreatePR = async () => {
@@ -970,15 +1045,21 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       }
 
       const branchName = `refract/${Date.now()}`
-      const title = `Refract: corrigir ${result.summary.total} issues de qualidade`
+      const title = lang === 'pt'
+        ? `Refract: corrigir ${result.summary.total} issues de qualidade`
+        : `Refract: fix ${result.summary.total} quality issues`
       const body = [
-        '## Refract Refactoring',
+        lang === 'pt' ? '## Refract Refactoring' : '## Refract Refactoring',
         '',
-        `Issues analisadas: ${result.summary.total}`,
-        `Issues aceites: ${Object.keys(decisions).length}`,
+        lang === 'pt'
+          ? `Issues analisadas: ${result.summary.total}`
+          : `Issues analyzed: ${result.summary.total}`,
+        lang === 'pt'
+          ? `Issues aceites: ${Object.keys(decisions).length}`
+          : `Accepted issues: ${Object.keys(decisions).length}`,
         `High impact: ${result.summary.high} · Medium: ${result.summary.medium} · Low: ${result.summary.low}`,
         '',
-        '### Mudanças',
+        lang === 'pt' ? '### Mudanças' : '### Changes',
         ...changes.map(c => `- \`${c.filePath}\``),
       ].join('\n')
 
@@ -1064,21 +1145,30 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         setActiveFile(null)
         setResult(analysisResult)
 
+        await persistProjectAnalysis(analysisResult.summary)
+
         try {
           const briefing = await generateBriefing(
             project.path,
             analysisResult.issues,
             analysisResult.scannedFiles,
             combinedGuidelines,
+            lang,
           )
           setRequestError(null)
-          setBriefingText(briefing ?? `Analisei ${analysisResult.scannedFiles.length} ficheiros e encontrei ${analysisResult.summary.total} problemas.`)
+          setBriefingText(briefing ?? t('projectView.briefingFallback', {
+            files: String(analysisResult.scannedFiles.length),
+            issues: String(analysisResult.summary.total),
+          }))
         } catch (err) {
           console.error('Failed to generate analysis briefing:', err)
           if (err instanceof RateLimitError) {
             setRequestError(err.message)
           }
-          setBriefingText(`Analisei ${analysisResult.scannedFiles.length} ficheiros e encontrei ${analysisResult.summary.total} problemas.`)
+          setBriefingText(t('projectView.briefingFallback', {
+            files: String(analysisResult.scannedFiles.length),
+            issues: String(analysisResult.summary.total),
+          }))
         }
         setSelectedCat(analysisResult.issues[0]?.category ?? null)
         setCurrentIssueIdx(0)
@@ -1276,7 +1366,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       {phase === 'idle' && !viewingFile && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
           <Play size={28} color={C.muted} />
-          <p style={{ fontSize: 14, color: C.muted }}>Corre a analise para detectar problemas</p>
+          <p style={{ fontSize: 14, color: C.muted }}>{lang === 'pt' ? 'Corre a analise para detectar problemas' : 'Run analysis to detect issues'}</p>
         </div>
       )}
 
@@ -1347,16 +1437,16 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     <div style={{ width: 280, flexShrink: 0, background: C.bg, borderLeft: `1px solid ${C.border}`, overflowY: 'auto', padding: '20px 16px' }}>
       {currentIssue && (
         <>
-          <p className="section-label" style={{ marginBottom: 10 }}>Porque</p>
+          <p className="section-label" style={{ marginBottom: 10 }}>{lang === 'pt' ? 'Porque' : 'Why'}</p>
           <p style={{ fontSize: 12, color: loadingExplanation ? C.muted : 'var(--muted-foreground)', lineHeight: 1.6, marginBottom: 20, fontStyle: loadingExplanation ? 'italic' : 'normal' }}>
-  {loadingExplanation ? 'A analisar...' : (issueExplanation ?? currentIssue.problem)}
+  {loadingExplanation ? t('projectView.analyzingIssue') : (issueExplanation ?? currentIssue.problem)}
 </p>
 
-          <p className="section-label" style={{ marginBottom: 12 }}>Impacto</p>
+          <p className="section-label" style={{ marginBottom: 12 }}>{lang === 'pt' ? 'Impacto' : 'Impact'}</p>
           {[
-            { label: 'Severidade', value: currentIssue.impact, valueColor: 'var(--foreground)' },
-            { label: 'Linhas', value: String(currentIssue.lineEnd - currentIssue.lineStart + 1), valueColor: C.muted },
-            { label: 'Ficheiro', value: currentIssue.file, valueColor: C.muted },
+            { label: lang === 'pt' ? 'Severidade' : 'Severity', value: currentIssue.impact, valueColor: 'var(--foreground)' },
+            { label: lang === 'pt' ? 'Linhas' : 'Lines', value: String(currentIssue.lineEnd - currentIssue.lineStart + 1), valueColor: C.muted },
+            { label: lang === 'pt' ? 'Ficheiro' : 'File', value: currentIssue.file, valueColor: C.muted },
           ].map(({ label, value, valueColor }) => (
             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 11, color: C.muted }}>{label}</span>
@@ -1367,7 +1457,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           {currentHistory && (
             <div style={{ marginTop: 16, background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px' }}>
               <p style={{ fontSize: 11, color: 'var(--foreground)', fontWeight: 500, marginBottom: 2 }}>
-                {currentHistory.decision === 'rejected' ? '⚠ Rejeitaste isto antes' : '✓ Já aceitaste isto antes'}
+                {currentHistory.decision === 'rejected' ? `⚠ ${lang === 'pt' ? 'Rejeitaste isto antes' : 'You rejected this before'}` : `✓ ${lang === 'pt' ? 'Já aceitaste isto antes' : 'You already accepted this before'}`}
               </p>
               <p style={{ fontSize: 10, color: C.muted }}>
                 {new Date(currentHistory.created_at).toLocaleDateString('pt-PT')}
@@ -1421,10 +1511,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         <style>{`@keyframes spin { to { transform: rotate(360deg) } } .spin { animation: spin 1s linear infinite; }`}</style>
         <ZapOff size={48} color={C.muted} style={{ marginBottom: 8 }} />
         <h2 style={{ fontSize: 20, color: 'var(--foreground)', fontWeight: 500, textAlign: 'center', margin: 0 }}>
-          Repository files not loaded
+          {lang === 'pt' ? 'Ficheiros do repositório não carregados' : 'Repository files not loaded'}
         </h2>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 400, margin: '0 0 8px', lineHeight: 1.5 }}>
-          The files for this project are not in local storage. Re-clone the repository to continue.
+          {lang === 'pt'
+            ? 'Os ficheiros deste projecto não estão no armazenamento local. Volta a clonar o repositório para continuar.'
+            : 'The files for this project are not in local storage. Re-clone the repository to continue.'}
         </p>
         
         {recloneError && (
@@ -1455,10 +1547,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
               {recloning ? (
                 <>
                   <Loader2 size={14} className="spin" />
-                  Re-cloning...
+                  {lang === 'pt' ? 'A clonar novamente...' : 'Re-cloning...'}
                 </>
               ) : (
-                'Re-clone Repository'
+                lang === 'pt' ? 'Voltar a clonar o repositório' : 'Re-clone Repository'
               )}
             </button>
             <button
@@ -1467,12 +1559,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
               disabled={recloning}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
             >
-              <ArrowLeft size={14} /> Back
+              <ArrowLeft size={14} /> {lang === 'pt' ? 'Voltar' : 'Back'}
             </button>
           </div>
         ) : (
           <button onClick={onBack} className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <ArrowLeft size={14} /> Back
+            <ArrowLeft size={14} /> {lang === 'pt' ? 'Voltar' : 'Back'}
           </button>
         )}
       </div>

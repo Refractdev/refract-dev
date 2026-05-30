@@ -114,7 +114,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
           .from('projects')
           .update({
             last_run: new Date().toISOString(),
-            status: `${result.summary.total} issues found`,
+            status: 'Refracted',
           })
           .eq('id', event.project_id)
 
