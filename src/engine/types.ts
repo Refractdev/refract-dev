@@ -34,8 +34,15 @@ export interface BlastRadius {
 
 export interface SafetyResult {
   passed: boolean
+  syntaxOk: boolean
   typecheck: boolean
-  importsResolved: boolean
+  buildOk?: boolean
+  testsOk?: boolean
   errors: string[]
   warnings: string[]
+  details?: {
+    typecheckLogs?: string[]
+    buildLogs?: string[]
+    testLogs?: string[]
+  }
 }

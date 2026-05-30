@@ -1,6 +1,5 @@
 // src/workers/detectors/stateExplosion.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, lineOf, endLineOf } from '../analysis.worker';
+import { Issue, ParsedFile, walk, lineOf, endLineOf } from '../../lib/analyze';
 
 interface StateVar {
   name: string;
@@ -13,12 +12,12 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
 
   walk(pf.ast, {
-    FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+    FunctionDeclaration(node: any) {
       if (node.id && /^[A-Z]/.test(node.id.name)) {
         analyzeComponent(node, node.id.name);
       }
     },
-    VariableDeclarator(node: TSESTree.VariableDeclarator) {
+    VariableDeclarator(node: any) {
       if (
         node.init &&
         (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression') &&
@@ -30,11 +29,11 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
     },
   });
 
-  function analyzeComponent(compNode: TSESTree.Node, compName: string) {
+  function analyzeComponent(compNode: any, compName: string) {
     const states: StateVar[] = [];
 
     walk(compNode, {
-      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+      VariableDeclarator(node: any) {
         if (
           node.init &&
           node.init.type === 'CallExpression' &&
@@ -57,9 +56,9 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
         }
       },
       // Do not enter nested component checks
-      FunctionDeclaration(n) { (n as any)._skip = true; },
-      FunctionExpression(n) { (n as any)._skip = true; },
-      ArrowFunctionExpression(n) { (n as any)._skip = true; },
+      FunctionDeclaration(_node, skip) { skip?.() },
+      FunctionExpression(_node, skip) { skip?.() },
+      ArrowFunctionExpression(_node, skip) { skip?.() },
     });
 
     if (states.length < 5) return;

@@ -1,14 +1,13 @@
 // src/workers/detectors/deadState.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../analysis.worker';
+import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../../lib/analyze';
 
 interface StateDecl {
   varName: string;
   setterName: string;
   line: number;
   endLine: number;
-  node: TSESTree.VariableDeclarator;
-  initNode: TSESTree.Node | null;
+  node: any;
+  initNode: any | null;
 }
 
 export function detectDeadState(pf: ParsedFile): Issue[] {
@@ -16,10 +15,10 @@ export function detectDeadState(pf: ParsedFile): Issue[] {
 
   // Helper to find React component nodes
   walk(pf.ast, {
-    FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+    FunctionDeclaration(node: any) {
       analyzeComponent(node, node.id?.name ?? 'Component');
     },
-    VariableDeclarator(node: TSESTree.VariableDeclarator) {
+    VariableDeclarator(node: any) {
       if (
         node.init &&
         (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression') &&
@@ -31,12 +30,12 @@ export function detectDeadState(pf: ParsedFile): Issue[] {
     },
   });
 
-  function analyzeComponent(compNode: TSESTree.Node, compName: string) {
+  function analyzeComponent(compNode: any, compName: string) {
     const states: StateDecl[] = [];
 
     // Find all useStates declared directly inside this component function body
     walk(compNode, {
-      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+      VariableDeclarator(node: any) {
         // Prevent traversing nested components or helper functions defined inside
         if (
           node.init &&
@@ -61,27 +60,31 @@ export function detectDeadState(pf: ParsedFile): Issue[] {
         }
       },
       // Do not enter nested functions to avoid wrong scope mapping
-      FunctionDeclaration(node) {
+      FunctionDeclaration(_node, skip) {
         // Skip traversing inside nested functions during useState gathering
-        (node as any)._skip = true;
+        skip?.();
       },
-      FunctionExpression(node) {
-        (node as any)._skip = true;
+      FunctionExpression(_node, skip) {
+        skip?.();
       },
-      ArrowFunctionExpression(node) {
-        (node as any)._skip = true;
+      ArrowFunctionExpression(_node, skip) {
+        skip?.();
       },
     });
 
     if (states.length === 0) return;
 
     // Find all identifiers inside this component body
-    const allIdentifiers = findAll(compNode, 'Identifier') as TSESTree.Identifier[];
+    const allIdentifiers = findAll(compNode, 'Identifier') as any[];
 
     // Count occurrences of each state var and setter
     const counts = new Map<string, number>();
     for (const id of allIdentifiers) {
       counts.set(id.name, (counts.get(id.name) ?? 0) + 1);
+    }
+
+    for (const state of states) {
+      console.log(`[deadState] varName: ${state.varName}, varCount: ${counts.get(state.varName) ?? 0}, setterCount: ${counts.get(state.setterName) ?? 0}`)
     }
 
     // 1. Dead State: state variable and setter are only referenced in the declaration itself (count === 1)
@@ -159,10 +162,10 @@ export function detectDeadState(pf: ParsedFile): Issue[] {
     // Let's find all function bodies/blocks within this component and see what setters are called.
     const setterCallBlocks: string[][] = [];
     walk(compNode, {
-      BlockStatement(blockNode: TSESTree.BlockStatement) {
+      BlockStatement(blockNode: any) {
         const callsInBlock: string[] = [];
         walk(blockNode, {
-          CallExpression(call: TSESTree.CallExpression) {
+          CallExpression(call: any) {
             if (call.callee.type === 'Identifier') {
               const name = call.callee.name;
               if (states.some(s => s.setterName === name)) {
@@ -171,8 +174,8 @@ export function detectDeadState(pf: ParsedFile): Issue[] {
             }
           },
           // Do not enter nested block statements to avoid double-counting
-          BlockStatement(nested) {
-            (nested as any)._skip = true;
+          BlockStatement(_nested, skip) {
+            skip?.();
           },
         });
         if (callsInBlock.length > 0) {

@@ -1,18 +1,17 @@
 // src/workers/detectors/oversized.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../analysis.worker';
+import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../../lib/analyze';
 
 export function detectOversized(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
   if (!pf.isTsx) return issues;
 
   walk(pf.ast, {
-    FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+    FunctionDeclaration(node: any) {
       if (node.id && /^[A-Z]/.test(node.id.name)) {
         analyzeComponent(node, node.id.name);
       }
     },
-    VariableDeclarator(node: TSESTree.VariableDeclarator) {
+    VariableDeclarator(node: any) {
       if (
         node.init &&
         (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression') &&
@@ -24,7 +23,7 @@ export function detectOversized(pf: ParsedFile): Issue[] {
     },
   });
 
-  function analyzeComponent(compNode: TSESTree.Node, compName: string) {
+  function analyzeComponent(compNode: any, compName: string) {
     const compStart = lineOf(compNode);
     const compEnd = endLineOf(compNode);
     const totalLines = compEnd - compStart + 1;
@@ -61,12 +60,12 @@ export function detectOversized(pf: ParsedFile): Issue[] {
 
     // 2. Detect sub-renderers (functions starting with render* returning JSX)
     walk(compNode, {
-      FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+      FunctionDeclaration(node: any) {
         if (node.id && /^render[A-Z]/.test(node.id.name)) {
           checkSubRenderer(node, node.id.name);
         }
       },
-      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+      VariableDeclarator(node: any) {
         if (
           node.id.type === 'Identifier' &&
           /^render[A-Z]/.test(node.id.name) &&
@@ -77,15 +76,15 @@ export function detectOversized(pf: ParsedFile): Issue[] {
         }
       },
       // Do not enter nested component checks here
-      ArrowFunctionExpression(node) {
-        if ((node as any) !== compNode) (node as any)._skip = true;
+      ArrowFunctionExpression(node, skip) {
+        if ((node as any) !== compNode) skip?.();
       },
-      FunctionExpression(node) {
-        if ((node as any) !== compNode) (node as any)._skip = true;
+      FunctionExpression(node, skip) {
+        if ((node as any) !== compNode) skip?.();
       },
     });
 
-    function checkSubRenderer(subNode: TSESTree.Node, name: string) {
+    function checkSubRenderer(subNode: any, name: string) {
       const subJsx = findAll(subNode, 'JSXElement').concat(findAll(subNode, 'JSXFragment'));
       if (subJsx.length > 0) {
         const start = lineOf(subNode);
@@ -96,7 +95,7 @@ export function detectOversized(pf: ParsedFile): Issue[] {
         // Infer props by finding all Identifier variables used in the sub-renderer that aren't defined in it
         const subVars = new Set<string>();
         walk(subNode, {
-          Identifier(id: TSESTree.Identifier) {
+          Identifier(id: any) {
             // Very simple check: if it is used, collect it
             const p = (id as any).parent;
             if (p && p.type === 'MemberExpression' && p.property === id && !p.computed) return;
@@ -106,7 +105,7 @@ export function detectOversized(pf: ParsedFile): Issue[] {
         });
         const localVars = new Set<string>();
         walk(subNode, {
-          VariableDeclarator(vDec: TSESTree.VariableDeclarator) {
+          VariableDeclarator(vDec: any) {
             if (vDec.id.type === 'Identifier') localVars.add(vDec.id.name);
           },
         });
@@ -136,12 +135,12 @@ export function detectOversized(pf: ParsedFile): Issue[] {
 
     // 3. Detect inline components (nested components capitalized definition)
     walk(compNode, {
-      FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+      FunctionDeclaration(node: any) {
         if ((node as any) !== compNode && node.id && /^[A-Z]/.test(node.id.name)) {
           checkInlineComponent(node, node.id.name);
         }
       },
-      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+      VariableDeclarator(node: any) {
         if (
           node.id.type === 'Identifier' &&
           /^[A-Z]/.test(node.id.name) &&
@@ -152,15 +151,15 @@ export function detectOversized(pf: ParsedFile): Issue[] {
         }
       },
       // Skip deep nested traversal
-      ArrowFunctionExpression(node) {
-        if ((node as any) !== compNode) (node as any)._skip = true;
+      ArrowFunctionExpression(node, skip) {
+        if ((node as any) !== compNode) skip?.();
       },
-      FunctionExpression(node) {
-        if ((node as any) !== compNode) (node as any)._skip = true;
+      FunctionExpression(node, skip) {
+        if ((node as any) !== compNode) skip?.();
       },
     });
 
-    function checkInlineComponent(subNode: TSESTree.Node, name: string) {
+    function checkInlineComponent(subNode: any, name: string) {
       const subJsx = findAll(subNode, 'JSXElement').concat(findAll(subNode, 'JSXFragment'));
       if (subJsx.length > 0) {
         const start = lineOf(subNode);

@@ -1,14 +1,19 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   Plus, FolderOpen, GitBranch, Play, Trash2, Loader2,
-  TrendingDown, TrendingUp, Minus, Lock, X, Activity,
-  AlertTriangle, CheckCircle, Clock, ChevronRight, Zap,
+  TrendingDown, TrendingUp, Minus, X,
+  AlertTriangle, CheckCircle, Clock, ChevronRight,
 } from 'lucide-react'
 import { Project } from '../shared/types'
 import { useAuth } from '../lib/AuthContext'
 import { NewProjectModal } from '../components/NewProjectModal'
-import { hasPricingUrl, openPricingUrl } from '../lib/billing'
+
 import { getAllProjects, deleteProject, getHealthSnapshots } from '../lib/db'
+import { fetchDriftReport, type DriftReport } from '../lib/api'
+import { HealthTrendChart } from '../components/HealthTrendChart'
+import { DriftAlertsPanel } from '../components/DriftAlertsPanel'
+import { CategoryTrendChart } from '../components/CategoryTrendChart'
+import { useTranslation } from '../hooks/useTranslation'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -105,27 +110,38 @@ const MonitorPanel: React.FC<{
   project: ProjectWithHealth
   onClose: () => void
   onOpenAnalysis: () => void
-}> = ({ project, onClose, onOpenAnalysis }) => {
+  driftReport: DriftReport | null
+  driftLoading: boolean
+}> = ({ project, onClose, onOpenAnalysis, driftReport, driftLoading }) => {
+  const { t, lang } = useTranslation()
   const score = project.healthScore ?? 0
   const color = getScoreColor(score)
   const bg = getScoreBg(score)
   const delta = getDelta(project.lastSnapshot, project.prevSnapshot)
   const snapshots = project.snapshots ?? []
 
-  const proFeatures = [
-    { icon: <Activity size={13} />, label: 'Anomaly Detection', desc: 'Detects suspicious patterns in commits' },
-    { icon: <AlertTriangle size={13} />, label: 'Instability Tracking', desc: 'Most modified and unstable files' },
-    { icon: <Zap size={13} />, label: 'Pattern Consistency', desc: 'Naming, state, style vs rest of codebase' },
-  ]
+  const chartData = snapshots.length >= 2
+    ? snapshots.map((s) => ({ date: s.timestamp, score: s.score }))
+    : null
 
-  const handleUpgrade = () => {
-    if (openPricingUrl()) return
-    window.alert('Billing is not yet configured in this build. Set VITE_PRICING_URL to enable upgrades.')
-  }
+  // Transform driftReport trends into CategoryTrendChart format
+  // Each trend gives us current vs average — we simulate 2 data points: "Previous" and "Current"
+  const categoryChartData = driftReport && driftReport.trends.length > 0
+    ? [
+        {
+          date: 'Previous avg',
+          ...Object.fromEntries(driftReport.trends.map(t => [t.category, Math.round(t.averageCount)])),
+        },
+        {
+          date: 'Current',
+          ...Object.fromEntries(driftReport.trends.map(t => [t.category, t.currentCount])),
+        },
+      ]
+    : null
 
   return (
     <div style={{
-      position: 'fixed', top: 0, right: 0, bottom: 0, width: 380,
+      position: 'fixed', top: 0, right: 0, bottom: 0, width: 440,
       background: 'var(--canvas)', borderLeft: '1px solid var(--hairline)',
       display: 'flex', flexDirection: 'column', zIndex: 100,
       animation: 'slideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -153,7 +169,7 @@ const MonitorPanel: React.FC<{
         <div style={{ background: bg, border: `1px solid ${color}22`, borderRadius: '12px', padding: '24px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 24 }}>
           <ScoreRing score={score} size={64} />
           <div style={{ flex: 1 }}>
-            <p className="section-label" style={{ marginBottom: 4 }}>Health Score</p>
+            <p className="section-label" style={{ marginBottom: 4 }}>{t('home.features.healthTitle')}</p>
             <p style={{ fontSize: 28, fontWeight: 600, color, fontFamily: 'var(--font-mono)', letterSpacing: '-0.05em' }}>{score}<span style={{ fontSize: 14, color: 'var(--ink-muted)' }}>/100</span></p>
             {delta !== null && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
@@ -164,16 +180,16 @@ const MonitorPanel: React.FC<{
                   : <Minus size={12} color="var(--ink-muted)" />
                 }
                 <span style={{ fontSize: 12, color: delta > 0 ? C.green : delta < 0 ? C.red : 'var(--ink-muted)' }}>
-                  {delta > 0 ? '+' : ''}{delta} since last analysis
+                  {delta > 0 ? '+' : ''}{delta} {lang === 'pt' ? 'desde a última análise' : lang === 'es' ? 'desde el último análisis' : lang === 'fr' ? 'depuis la dernière analyse' : lang === 'de' ? 'seit der letzten Analyse' : 'since last analysis'}
                 </span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Degradation Detection — Free */}
+        {/* Degradation Detection */}
         <div style={{ marginBottom: 20 }}>
-          <p className="section-label" style={{ marginBottom: 12 }}>Degradation</p>
+          <p className="section-label" style={{ marginBottom: 12 }}>{t('projects.monitor.degradation.title')}</p>
 
           {project.lastSnapshot ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -181,8 +197,8 @@ const MonitorPanel: React.FC<{
                 <div style={{ background: 'rgba(207, 45, 86, 0.08)', border: '1px solid rgba(207, 45, 86, 0.18)', borderRadius: '8px', padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                   <AlertTriangle size={13} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />
                   <div>
-                    <p style={{ fontSize: 12, color: C.red, fontWeight: 500, marginBottom: 2 }}>Degradation detected</p>
-                    <p style={{ fontSize: 11, color: 'var(--ink-muted)' }}>Score dropped {Math.abs(delta)} points since last analysis.</p>
+                    <p style={{ fontSize: 12, color: C.red, fontWeight: 500, marginBottom: 2 }}>{t('projects.monitor.degradation.detected')}</p>
+                    <p style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{t('projects.monitor.degradation.detectedDesc', { points: String(Math.abs(delta)) })}</p>
                   </div>
                 </div>
               )}
@@ -190,8 +206,8 @@ const MonitorPanel: React.FC<{
                 <div style={{ background: 'rgba(31, 138, 101, 0.08)', border: '1px solid rgba(31, 138, 101, 0.18)', borderRadius: '8px', padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                   <CheckCircle size={13} color={C.green} style={{ flexShrink: 0, marginTop: 1 }} />
                   <div>
-                    <p style={{ fontSize: 12, color: C.green, fontWeight: 500, marginBottom: 2 }}>No degradation</p>
-                    <p style={{ fontSize: 11, color: 'var(--ink-muted)' }}>Stable or improving quality.</p>
+                    <p style={{ fontSize: 12, color: C.green, fontWeight: 500, marginBottom: 2 }}>{t('projects.monitor.degradation.none')}</p>
+                    <p style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{t('projects.monitor.degradation.noneDesc')}</p>
                   </div>
                 </div>
               )}
@@ -199,16 +215,16 @@ const MonitorPanel: React.FC<{
               {/* Last snapshot info */}
               <div className="card" style={{ padding: '12px 16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span className="section-label" style={{ fontSize: 11 }}>Last analysis</span>
+                  <span className="section-label" style={{ fontSize: 11 }}>{t('projects.monitor.lastAnalysisTitle')}</span>
                   <span style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}>
-                    {project.lastSnapshot.timestamp ? new Date(project.lastSnapshot.timestamp).toLocaleDateString('en-US') : '—'}
+                    {project.lastSnapshot.timestamp ? new Date(project.lastSnapshot.timestamp).toLocaleDateString(lang === 'pt' ? 'pt-PT' : lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : lang === 'de' ? 'de-DE' : 'en-US') : '—'}
                   </span>
                 </div>
                 {[
-                  { label: 'Total issues', value: project.lastSnapshot.issueCount },
-                  { label: 'High impact', value: project.lastSnapshot.high, color: C.red },
-                  { label: 'Medium', value: project.lastSnapshot.medium, color: C.yellow },
-                  { label: 'Low', value: project.lastSnapshot.low, color: 'var(--ink-muted)' },
+                  { label: t('projects.monitor.totalIssues'), value: project.lastSnapshot.issueCount },
+                  { label: t('projects.monitor.highImpact'), value: project.lastSnapshot.high, color: C.red },
+                  { label: t('projects.monitor.medium'), value: project.lastSnapshot.medium, color: C.yellow },
+                  { label: t('projects.monitor.low'), value: project.lastSnapshot.low, color: 'var(--ink-muted)' },
                 ].map(({ label, value, color: vc }) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={{ fontSize: 14, color: 'var(--ink-muted)' }}>{label}</span>
@@ -220,44 +236,138 @@ const MonitorPanel: React.FC<{
           ) : (
             <div style={{ background: 'var(--canvas-soft)', border: `1px solid var(--hairline)`, borderRadius: '8px', padding: '14px', display: 'flex', alignItems: 'center', gap: 10 }}>
               <Clock size={13} color={C.muted} />
-              <p style={{ fontSize: 14, color: C.muted }}>No analyses yet. Run the first one to start monitoring.</p>
+              <p style={{ fontSize: 14, color: C.muted }}>{t('projects.monitor.noAnalyses')}</p>
             </div>
           )}
         </div>
 
-        {/* Pro features — locked */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <p className="section-label">Pro Features</p>
-            <span style={{ fontSize: 11, color: 'var(--primary)', background: 'rgba(245, 78, 0, 0.08)', border: '1px solid rgba(245, 78, 0, 0.2)', borderRadius: '4px', padding: '2px 6px', fontWeight: 600 }}>PRO</span>
+        {/* Health Trend Chart */}
+        {chartData && (
+          <div style={{ marginBottom: 20 }}>
+            <p className="section-label" style={{ marginBottom: 12 }}>{t('projects.monitor.scoreTrend')}</p>
+            <div style={{ background: 'var(--surface-card)', border: '1px solid var(--hairline)', borderRadius: 8, padding: '12px 8px' }}>
+              <HealthTrendChart data={chartData} height={160} />
+            </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {proFeatures.map(({ icon, label, desc }) => (
-              <div key={label} style={{ background: 'var(--surface-card)', border: `1px solid var(--hairline)`, borderRadius: '8px', padding: '10px 12px', opacity: 0.5, position: 'relative', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                  <span style={{ color: C.muted }}>{icon}</span>
-                  <span style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{label}</span>
-                  <Lock size={10} color={C.muted} style={{ marginLeft: 'auto' }} />
-                </div>
-                <p style={{ fontSize: 13, color: C.muted, paddingLeft: 21 }}>{desc}</p>
-              </div>
-            ))}
+        )}
+
+        {/* Category Trends Chart */}
+        {driftLoading && (
+          <div style={{ marginBottom: 20 }}>
+            <p className="section-label" style={{ marginBottom: 12 }}>{lang === 'pt' ? 'Problemas por Categoria' : lang === 'es' ? 'Problemas por categoría' : lang === 'fr' ? 'Problèmes par catégorie' : lang === 'de' ? 'Probleme nach Kategorie' : 'Issues by Category'}</p>
+            <div style={{ background: 'var(--surface-card)', border: '1px solid var(--hairline)', borderRadius: 8, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Loader2 size={14} color="var(--ink-muted)" className="spin" />
+            </div>
           </div>
-          <button onClick={handleUpgrade} className="btn btn-primary" style={{ width: '100%', marginTop: 12 }}>
-            Upgrade to Pro
-          </button>
-          {!hasPricingUrl && (
-            <p style={{ marginTop: 8, fontSize: 13, color: C.muted }}>
-              Set `VITE_PRICING_URL` to enable this CTA.
-            </p>
-          )}
-        </div>
+        )}
+        {!driftLoading && categoryChartData && (
+          <div style={{ marginBottom: 20 }}>
+            <p className="section-label" style={{ marginBottom: 12 }}>{lang === 'pt' ? 'Problemas por Categoria' : lang === 'es' ? 'Problemas por categoría' : lang === 'fr' ? 'Problèmes par catégorie' : lang === 'de' ? 'Probleme nach Kategorie' : 'Issues by Category'}</p>
+            <div style={{ background: 'var(--surface-card)', border: '1px solid var(--hairline)', borderRadius: 8, padding: '12px 8px' }}>
+              <CategoryTrendChart data={categoryChartData} height={160} />
+            </div>
+          </div>
+        )}
+
+        {/* Drift Alerts */}
+        {!driftLoading && driftReport && (
+          <div style={{ marginBottom: 20 }}>
+            <p className="section-label" style={{ marginBottom: 12 }}>{t('projects.monitor.alertsTitle', { count: '' }).replace('()', '').trim()}</p>
+            <DriftAlertsPanel report={driftReport} />
+          </div>
+        )}
+
+        {/* Category Trends */}
+        {!driftLoading && driftReport && driftReport.trends.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <p className="section-label" style={{ marginBottom: 12 }}>{lang === 'pt' ? 'Tendências por Categoria' : lang === 'es' ? 'Tendencias por categoría' : lang === 'fr' ? 'Tendances par catégorie' : lang === 'de' ? 'Kategorie-Trends' : 'Category Trends'}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {driftReport.trends.map((trend) => {
+                const isWorsening = trend.direction === 'worsening'
+                const isImproving = trend.direction === 'improving'
+                const color = isWorsening ? C.red : isImproving ? C.green : C.muted
+                const icon = isWorsening
+                  ? <TrendingDown size={11} color={C.red} />
+                  : isImproving
+                  ? <TrendingUp size={11} color={C.green} />
+                  : <Minus size={11} color={C.muted} />
+
+                return (
+                  <div key={trend.category} style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    background: 'var(--surface-card)', border: '1px solid var(--hairline)',
+                    borderRadius: 6, padding: '8px 10px',
+                  }}>
+                    {icon}
+                    <span style={{ flex: 1, fontSize: 11, color: 'var(--ink)', fontFamily: 'var(--font-mono)' }}>
+                      {trend.category}
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--ink-muted)' }}>
+                      {lang === 'pt' ? 'média' : lang === 'es' ? 'media' : lang === 'fr' ? 'moyenne' : lang === 'de' ? 'Mittelwert' : 'avg'} {trend.averageCount}
+                    </span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, color,
+                      background: `${color}15`, borderRadius: 4, padding: '1px 6px',
+                    }}>
+                      {trend.currentCount}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Decay Hotspots */}
+        {!driftLoading && driftReport && driftReport.decayHotspots.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <p className="section-label" style={{ marginBottom: 12 }}>{lang === 'pt' ? 'Pontos Críticos de Degradação' : lang === 'es' ? 'Puntos críticos de degradación' : lang === 'fr' ? 'Points chauds de dégradation' : lang === 'de' ? 'Verfall-Hotspots' : 'Decay Hotspots'}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {driftReport.decayHotspots.map((hotspot) => {
+                const isCritical = hotspot.severity === 'critical'
+                const color = isCritical ? C.red : C.yellow
+
+                return (
+                  <div key={hotspot.filePath} style={{
+                    background: `${color}08`,
+                    border: `1px solid ${color}22`,
+                    borderRadius: 6, padding: '10px 12px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>
+                        {hotspot.fileName}
+                      </span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, color,
+                        background: `${color}15`, borderRadius: 4, padding: '1px 6px', flexShrink: 0,
+                      }}>
+                        {isCritical ? (lang === 'pt' ? 'Crítico' : lang === 'es' ? 'Crítico' : lang === 'fr' ? 'Critique' : lang === 'de' ? 'Kritisch' : 'Critical') : (lang === 'pt' ? 'Aviso' : lang === 'es' ? 'Advertencia' : lang === 'fr' ? 'Avertissement' : lang === 'de' ? 'Warnung' : 'Warning')}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <span style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}>
+                        +{hotspot.growthRate} issues/{lang === 'pt' ? 'análise' : lang === 'es' ? 'análisis' : lang === 'fr' ? 'analyse' : lang === 'de' ? 'Scan' : 'scan'}
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--ink-muted)' }}>
+                        {hotspot.latestCount} issues {lang === 'pt' ? 'agora' : lang === 'es' ? 'ahora' : lang === 'fr' ? 'actuels' : lang === 'de' ? 'jetzt' : 'now'}
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--ink-muted)' }}>
+                        {hotspot.appearances} {lang === 'pt' ? 'análises' : lang === 'es' ? 'análisis' : lang === 'fr' ? 'analyses' : lang === 'de' ? 'Scans' : 'scans'}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Footer */}
       <div style={{ padding: '16px 24px', borderTop: `1px solid var(--hairline)`, flexShrink: 0 }}>
         <button onClick={onOpenAnalysis} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'space-between' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Play size={14} /> Open Analysis</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Play size={14} /> {t('projects.monitor.openAnalysis')}</span>
           <ChevronRight size={14} />
         </button>
       </div>
@@ -274,6 +384,7 @@ const ProjectCard: React.FC<{
   onAnalyse: (e: React.MouseEvent) => void
   selected: boolean
 }> = ({ project, onClick, onDelete, onAnalyse, selected }) => {
+  const { t, lang } = useTranslation()
   const [hovered, setHovered] = useState(false)
   const score = project.healthScore
   const color = score !== undefined ? getScoreColor(score) : C.muted
@@ -307,7 +418,7 @@ const ProjectCard: React.FC<{
         )}
         {score === undefined && (
           <span style={{ fontSize: 11, color: C.muted, background: 'var(--surface-strong)', borderRadius: '4px', padding: '3px 7px', flexShrink: 0 }}>
-            Not analysed
+            {t('home.notAnalysed')}
           </span>
         )}
       </div>
@@ -325,7 +436,7 @@ const ProjectCard: React.FC<{
         )}
         {project.lastSnapshot && (
           <span className="section-label" style={{ fontSize: 11, marginLeft: 'auto' }}>
-            {project.lastSnapshot.issueCount} issues
+            {project.lastSnapshot.issueCount} {lang === 'pt' ? 'problemas' : lang === 'es' ? 'problemas' : lang === 'fr' ? 'problèmes' : lang === 'de' ? 'Probleme' : 'issues'}
           </span>
         )}
       </div>
@@ -340,20 +451,22 @@ const ProjectCard: React.FC<{
       {/* Bottom row — actions */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, borderTop: `1px solid var(--hairline)` }}>
         <span style={{ fontSize: 13, color: 'var(--ink-muted)' }}>
-          {project.last_run ? `Last analysis ${new Date(project.last_run).toLocaleDateString('en-US')}` : 'Never analysed'}
+          {project.last_run 
+            ? t('projects.lastAnalysis', { date: new Date(project.last_run).toLocaleDateString(lang === 'pt' ? 'pt-PT' : lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : lang === 'de' ? 'de-DE' : 'en-US') }) 
+            : t('projects.neverAnalysed')}
         </span>
         <div style={{ display: 'flex', gap: 6, opacity: hovered ? 1 : 0, transition: 'opacity 0.12s ease' }}>
           <button
             onClick={onAnalyse}
-            title="Run Analysis"
+            title={t('projects.analyseBtn')}
             className="btn btn-secondary btn-sm"
             style={{ height: 28, padding: '0 10px', fontSize: 12 }}
           >
-            <Play size={12} /> Analyse
+            <Play size={12} /> {t('projects.analyseBtn')}
           </button>
           <button
             onClick={onDelete}
-            title="Delete"
+            title={t('common.delete')}
             className="btn btn-ghost btn-sm"
             style={{ height: 28, width: 28, padding: 0 }}
           >
@@ -374,10 +487,13 @@ interface ProjectsPageProps {
 
 export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onNavigate }) => {
   const { profile } = useAuth()
+  const { t, lang } = useTranslation()
   const [projects, setProjects] = useState<ProjectWithHealth[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [selectedProject, setSelectedProject] = useState<ProjectWithHealth | null>(null)
+  const [driftReport, setDriftReport] = useState<DriftReport | null>(null)
+  const [driftLoading, setDriftLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const loadProjects = async () => {
@@ -440,14 +556,37 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onNav
     }
   }, [profile?.id])
 
+  const loadDriftReport = useCallback(async (projectId: string) => {
+    setDriftLoading(true)
+    try {
+      const report = await fetchDriftReport(projectId)
+      setDriftReport(report)
+    } catch {
+      setDriftReport(null)
+    } finally {
+      setDriftLoading(false)
+    }
+  }, [])
+
+  const handleSelectProject = (project: ProjectWithHealth | null) => {
+    setSelectedProject(project)
+    if (project) {
+      loadDriftReport(project.id)
+    } else {
+      setDriftReport(null)
+    }
+  }
+
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
-    if (confirm('Are you sure you want to delete this project?')) {
+    if (confirm(t('projects.confirmDelete'))) {
       await deleteProject(id)
       setProjects((prev: ProjectWithHealth[]) => prev.filter((p: ProjectWithHealth) => p.id !== id))
       if (selectedProject?.id === id) setSelectedProject(null)
     }
   }
+
+  const pluralSuffix = lang === 'de' ? (projects.length !== 1 ? 'e' : '') : (projects.length !== 1 ? 's' : '')
 
   return (
     <div style={{ padding: '32px 36px', height: '100%', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--canvas)' }}>
@@ -470,29 +609,34 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onNav
        {/* Header */}
        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
           <div>
-            <h1 className="page-title" style={{ marginBottom: 4, fontSize: '26px', fontWeight: 400, letterSpacing: '-0.325px' }}>Projects</h1>
-            <p style={{ fontSize: 14, color: 'var(--ink-muted)' }}>{projects.length} projeto{projects.length !== 1 ? 's' : ''}</p>
+            <h1 className="page-title" style={{ marginBottom: 4, fontSize: '26px', fontWeight: 400, letterSpacing: '-0.325px' }}>{t('projects.title')}</h1>
+            <p style={{ fontSize: 14, color: 'var(--ink-muted)' }}>
+              {t('projects.projectCount', { 
+                count: String(projects.length), 
+                plural: pluralSuffix 
+              })}
+            </p>
           </div>
           <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            <Plus size={16} /> New Project
+            <Plus size={16} /> {t('projects.newProject')}
           </button>
       </div>
 
       {loading ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ink-muted)', fontSize: 14, marginTop: 80, justifyContent: 'center' }}>
-          <Loader2 size={16} className="spin" /> Loading projects...
+          <Loader2 size={16} className="spin" /> {t('common.loading')}
         </div>
       ) : projects.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, marginTop: 80 }}>
           <FolderOpen size={24} style={{ color: 'var(--ink-muted)' }} />
-          <p style={{ fontSize: 14, color: 'var(--ink-muted)' }}>No projects yet</p>
+          <p style={{ fontSize: 14, color: 'var(--ink-muted)' }}>{t('projects.noProjects')}</p>
         </div>
       ) : (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
           gap: 16,
-          marginRight: selectedProject ? 372 : 0,
+          marginRight: selectedProject ? 452 : 0,
           transition: 'margin-right 0.2s ease',
         }}>
           {projects.map((p: ProjectWithHealth) => (
@@ -500,7 +644,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onNav
               key={p.id}
               project={p}
               selected={selectedProject?.id === p.id}
-              onClick={() => setSelectedProject((prev: ProjectWithHealth | null) => prev?.id === p.id ? null : p)}
+              onClick={() => handleSelectProject(selectedProject?.id === p.id ? null : p)}
               onDelete={(e: React.MouseEvent) => handleDelete(e, p.id)}
               onAnalyse={(e: React.MouseEvent) => { e.stopPropagation(); onOpenProject(p.id) }}
             />
@@ -517,7 +661,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onNav
             }}
           >
             <Plus size={24} color="var(--ink-muted)" />
-            <span className="section-label">New project</span>
+            <span className="section-label">{t('projects.newProject')}</span>
           </button>
         </div>
       )}
@@ -532,8 +676,10 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onNav
           />
           <MonitorPanel
             project={selectedProject}
-            onClose={() => setSelectedProject(null)}
-            onOpenAnalysis={() => { setSelectedProject(null); onOpenProject(selectedProject.id) }}
+            onClose={() => handleSelectProject(null)}
+            onOpenAnalysis={() => { handleSelectProject(null); onOpenProject(selectedProject.id) }}
+            driftReport={driftReport}
+            driftLoading={driftLoading}
           />
         </>
       )}

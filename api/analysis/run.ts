@@ -1,0 +1,177 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { getAdminSupabaseClient } from '../_lib/supabase'
+import { runAnalysis } from '../../src/lib/analyze'
+import { analyzeDrift, type SnapshotData } from '../../src/lib/drift'
+import { getAuthenticatedUser } from '../_lib/auth'
+
+import { cloneRepo } from '../_lib/clone'
+
+// ─── Handler ──────────────────────────────────────────────────────────────────
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  try {
+    // ── Authenticate ────────────────────────────────────────────────────────
+    let githubToken: string | null = null
+    try {
+      const auth = await getAuthenticatedUser(req.headers.authorization)
+      githubToken = auth.githubToken
+    } catch {
+      return res.status(401).json({ error: 'Autenticação necessária' })
+    }
+
+    const { projectId, repoUrl, branch, files: preFetchedFiles } = req.body ?? {}
+
+    if (!projectId) {
+      return res.status(400).json({ error: 'Missing projectId' })
+    }
+
+    // Verify user owns this project
+    const supabase = getAdminSupabaseClient()
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .single()
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+
+    // ── Get or clone files ──────────────────────────────────────────────────
+    let files: Record<string, string>
+
+    if (preFetchedFiles) {
+      files = preFetchedFiles
+    } else if (repoUrl) {
+      const branchName = branch ?? 'main'
+      files = await cloneRepo(repoUrl, githubToken, branchName)
+      console.log(`[analysis/run] Cloned ${Object.keys(files).length} files from ${repoUrl} ${branchName}`)
+    } else {
+      return res.status(400).json({ error: 'Provide files, repoUrl, or both' })
+    }
+
+    // ── Run analysis ────────────────────────────────────────────────────────
+    const fileMap = new Map(Object.entries(files))
+    const result = await runAnalysis(fileMap)
+
+    // ── Compute category breakdown ──────────────────────────────────────────
+    const categoryCounts: Record<string, number> = {}
+    const fileCounts: Record<string, number> = {}
+    for (const issue of result.issues) {
+      categoryCounts[issue.category] = (categoryCounts[issue.category] ?? 0) + 1
+      fileCounts[issue.filePath] = (fileCounts[issue.filePath] ?? 0) + 1
+    }
+
+    // ── Save to database ────────────────────────────────────────────────────
+    // supabase already declared above
+
+    // Save health snapshot
+    const score = Math.max(0, Math.min(100,
+      100 - (result.summary.high * 10) - (result.summary.medium * 4) - (result.summary.low * 1)
+    ))
+
+    const { data: snapshot, error: snapshotError } = await supabase
+      .from('health_snapshots')
+      .insert({
+        project_id: projectId,
+        score,
+        issue_count: result.summary.total,
+        high: result.summary.high,
+        medium: result.summary.medium,
+        low: result.summary.low,
+        timestamp: new Date().toISOString(),
+      })
+      .select('id')
+      .single()
+
+    if (snapshotError) {
+      console.error('[analysis/run] Failed to save health_snapshot:', snapshotError)
+    }
+
+    // Save analysis result
+    const { error: analysisError } = await supabase
+      .from('analysis_results')
+      .insert({
+        project_id: projectId,
+        snapshot_id: snapshot?.id ?? null,
+        score,
+        issue_count: result.summary.total,
+        high: result.summary.high,
+        medium: result.summary.medium,
+        low: result.summary.low,
+        issue_counts_by_category: categoryCounts,
+        file_issue_counts: fileCounts,
+        trigger: 'manual',
+        duration_ms: 0,
+      })
+
+    if (analysisError) {
+      console.error('[analysis/run] Failed to save analysis_result:', analysisError)
+    }
+
+    // Update project
+    await supabase
+      .from('projects')
+      .update({
+        last_run: new Date().toISOString(),
+        status: `${result.summary.total} issues found`,
+      })
+      .eq('id', projectId)
+
+    // ── Run drift detection and save alerts ─────────────────────────────────
+    try {
+      const { data: recentResults } = await supabase
+        .from('analysis_results')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      const snapshots = (recentResults ?? []) as SnapshotData[]
+      if (snapshots.length >= 2) {
+        const driftReport = analyzeDrift(snapshots, projectId)
+        const { data: existingAlerts } = await supabase
+          .from('drift_alerts')
+          .select('alert_type, message')
+          .eq('project_id', projectId)
+          .is('acknowledged_at', null)
+
+        const existingMessages = new Set(
+          (existingAlerts ?? []).map((a: any) => `${a.alert_type}:${a.message}`),
+        )
+
+        for (const alert of driftReport.alerts) {
+          const key = `${alert.alert_type}:${alert.message}`
+          if (existingMessages.has(key)) continue
+          await supabase
+            .from('drift_alerts')
+            .insert({
+              project_id: projectId,
+              analysis_result_id: snapshots[0].id,
+              alert_type: alert.alert_type,
+              severity: alert.severity,
+              message: alert.message,
+              metadata: alert.metadata,
+            })
+          existingMessages.add(key)
+        }
+      }
+    } catch (driftErr) {
+      console.error('[analysis/run] Drift detection failed:', driftErr)
+    }
+
+    return res.status(200).json({
+      ...result,
+      projectId,
+      score,
+      snapshotId: snapshot?.id ?? null,
+    })
+  } catch (error: any) {
+    console.error('[analysis/run] Error:', error)
+    return res.status(500).json({ error: error.message ?? 'Analysis failed' })
+  }
+}

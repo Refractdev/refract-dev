@@ -4,8 +4,6 @@ import http from 'isomorphic-git/http/node';
 import { Volume, createFsFromVolume } from 'memfs';
 import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth';
 import { githubRequest, parseGitHubRepoUrl } from '../_lib/github';
-import { applyRateLimitHeaders, checkRateLimit } from '../_lib/ratelimit';
-
 const TEXT_FILE_PATTERN = /\.(ts|tsx|js|jsx|json|css|html|md)$/i;
 const IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'coverage']);
 
@@ -51,22 +49,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { user, plan, githubToken } = await getAuthenticatedUserWithOptionalGitHub(
+    const { githubToken } = await getAuthenticatedUserWithOptionalGitHub(
       req.headers.authorization
     );
-    const limitResult = await checkRateLimit(user.id, plan);
-    applyRateLimitHeaders(res, limitResult);
-
-    if (!limitResult.success) {
-      return res.status(429).json({
-        error: 'Rate limit exceeded',
-        message:
-          plan === 'free'
-            ? 'Limite do plano Free atingido (20/hora). Faz upgrade para Pro.'
-            : `Limite atingido. Reset: ${new Date(limitResult.reset).toLocaleTimeString('pt-PT')}`,
-        reset: limitResult.reset,
-      });
-    }
 
     const { repoUrl, branch } = req.body ?? {};
     if (!repoUrl) {

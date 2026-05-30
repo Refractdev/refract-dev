@@ -10,7 +10,7 @@ import { Project, AnalysisResult, IssueCategory, AnalysisIssue } from '../../sha
 import { LogoMark } from '../../components/Logo'
 import type { Phase, Decision } from './types'
 import { getProject, saveDecision, getDecisionHistory, getSetting } from '../../lib/db'
-import { explainIssue, refactorIssue, generateBriefing, RateLimitError, cloneGitHubRepo, validateProposalSafety } from '../../lib/api'
+import { explainIssue, generateBriefing, RateLimitError, cloneGitHubRepo, validateProposalSafety, createGitHubPullRequest } from '../../lib/api'
 import { useFiles } from '../../context/FilesContext'
 import type { TransformProposal, SafetyResult } from '../../engine/types'
 import { CodeMap } from './CodeMap'
@@ -252,7 +252,10 @@ const SuccessState: React.FC<{
   issues: AnalysisIssue[]
   project: Project | null
   onReviewAgain: () => void
-}> = ({ summary, decisions, issues, project, onReviewAgain }) => {
+  onCreatePR?: () => void
+  creatingPR?: boolean
+  prUrl?: string | null
+}> = ({ summary, decisions, issues, project, onReviewAgain, onCreatePR, creatingPR, prUrl }) => {
 
   const acceptedIssues = issues.filter((issue) => decisions[issue.id] === 'accepted')
   const acceptedCount = acceptedIssues.length
@@ -326,8 +329,26 @@ const SuccessState: React.FC<{
       </div>
 
       <div style={{ display: 'flex', gap: 12 }}>
+        {acceptedCount > 0 && !prUrl && (
+          <button onClick={onCreatePR} className="btn btn-primary" style={{ gap: 8 }} disabled={creatingPR}>
+            {creatingPR ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> A criar PR...
+              </>
+            ) : (
+              <>
+                <GitBranch size={14} /> Create PR
+              </>
+            )}
+          </button>
+        )}
+        {prUrl && (
+          <a href={prUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ gap: 8 }}>
+            <GitBranch size={14} /> Abrir PR no GitHub
+          </a>
+        )}
         {acceptedCount > 0 && (
-          <button onClick={handleExportChangelog} className="btn btn-primary" style={{ gap: 8 }}>
+          <button onClick={handleExportChangelog} className="btn btn-ghost" style={{ gap: 8 }}>
             <Download size={14} /> Export Changelog
           </button>
         )}
@@ -634,6 +655,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [requestError, setRequestError] = useState<string | null>(null)
   const [combinedGuidelines, setCombinedGuidelines] = useState('')
   const [activeTab, setActiveTab] = useState<'issues' | 'map'>('issues')
+  const [creatingPR, setCreatingPR] = useState(false)
+  const [prUrl, setPrUrl] = useState<string | null>(null)
 
   // Derived
   const allIssues = result?.issues ?? []
@@ -696,32 +719,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     getExplanation();
   }, [currentIssue?.id, combinedGuidelines])
 
-     // Auto-refactor when 'after' content is empty
-   useEffect(() => {
-     if (!currentIssue) return
-     const afterContent = currentIssue.patch?.after ?? currentIssue.lines.after.join('\n')
-     if (afterContent.trim() !== '') return
-
-     setLoadingRefactor(true)
-     ;(async () => {
-       try {
-         // Read file from uploaded files
-         const fileContent = getFileContentForIssue(currentIssue.filePath, fileMap);
-         const fileSource = fileContent ? fileContent.content : '';
-         const newPatch = await refactorIssue(currentIssue, fileSource, undefined, combinedGuidelines)
-         setRequestError(null)
-         updateIssueLines(currentIssue.id, newPatch)
-       } catch (err) {
-         console.error('Failed to auto-refactor issue:', err)
-         if (err instanceof RateLimitError) {
-           setRequestError(err.message)
-         }
-         console.error('Auto-refactor failed', err)
-       } finally {
-         setLoadingRefactor(false)
-       }
-     })()
-   }, [currentIssue?.id, combinedGuidelines]);
+  // Transition to 'complete' when all refactoring proposals are applied/skipped
+  useEffect(() => {
+    if (phase === 'refactoring' && !loadingRefactorEngine && refactorProposals.length === 0) {
+      setPhase('complete')
+    }
+  }, [phase, loadingRefactorEngine, refactorProposals.length])
 
   useEffect(() => {
     async function load() {
@@ -888,8 +891,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       ).catch(err => console.error('Failed to save decision in batch accept', i.id, err))
     })
     setDecisions(all)
-    setPhase('complete')
     await Promise.all(promises)
+    runRefactorEngine()
   }
 
   const runRefactorEngine = async () => {
@@ -952,6 +955,48 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       await saveDecision(project.id, proposal.id, proposal.type, proposal.filePath, proposal.title, 'rejected', 0)
     } catch (error) {
       console.error('Failed to persist refactor skip decision', error)
+    }
+  }
+
+  const handleCreatePR = async () => {
+    if (!project?.repo || !result) return
+    setCreatingPR(true)
+    setRequestError(null)
+
+    try {
+      const changes: Array<{ filePath: string; newContent: string }> = []
+      for (const [path, content] of fileMap.entries()) {
+        changes.push({ filePath: path, newContent: content })
+      }
+
+      const branchName = `refract/${Date.now()}`
+      const title = `Refract: corrigir ${result.summary.total} issues de qualidade`
+      const body = [
+        '## Refract Refactoring',
+        '',
+        `Issues analisadas: ${result.summary.total}`,
+        `Issues aceites: ${Object.keys(decisions).length}`,
+        `High impact: ${result.summary.high} · Medium: ${result.summary.medium} · Low: ${result.summary.low}`,
+        '',
+        '### Mudanças',
+        ...changes.map(c => `- \`${c.filePath}\``),
+      ].join('\n')
+
+      const pr = await createGitHubPullRequest({
+        repoUrl: project.repo,
+        baseBranch: project.branch ?? 'main',
+        headBranch: branchName,
+        title,
+        body,
+        changes,
+      })
+
+      setPrUrl(pr.url)
+    } catch (err: any) {
+      console.error('Failed to create PR:', err)
+      setRequestError(err.message || 'Failed to create pull request')
+    } finally {
+      setCreatingPR(false)
     }
   }
 
@@ -1232,9 +1277,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
           <Play size={28} color={C.muted} />
           <p style={{ fontSize: 14, color: C.muted }}>Corre a analise para detectar problemas</p>
-          <button onClick={runAnalysis} className="btn btn-primary">
-            Run Analysis
-          </button>
         </div>
       )}
 
@@ -1291,7 +1333,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           decisions={decisions}
           issues={allIssues}
           project={project}
-          onReviewAgain={() => { setPhase('idle'); setResult(null); setDecisions({}) }}
+          onReviewAgain={() => { setPhase('idle'); setResult(null); setDecisions({}); setPrUrl(null) }}
+          onCreatePR={handleCreatePR}
+          creatingPR={creatingPR}
+          prUrl={prUrl}
         />
       ) : null}
     </div>

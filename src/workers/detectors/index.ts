@@ -1,5 +1,5 @@
 // src/workers/detectors/index.ts
-import { Issue, ParsedFile } from '../analysis.worker';
+import { Issue, ParsedFile } from '../../lib/analyze';
 import { detectAnyTypes } from './anyTypes';
 import { detectDeadState } from './deadState';
 import { detectEffectNoDeps } from './effectNoDeps';
@@ -11,10 +11,10 @@ import { detectMissingErrorBoundary } from './missingErrorBoundary';
 import { detectMemoryLeaks } from './memoryLeaks';
 import { detectDuplicateLogic } from './duplicateLogic';
 
-export function runAllDetectors(pf: ParsedFile, files: Map<string, string>): Issue[] {
+export function runAllDetectors(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
 
-  const detectors = [
+  const perFileDetectors = [
     { name: 'anyTypes', run: () => detectAnyTypes(pf) },
     { name: 'deadState', run: () => detectDeadState(pf) },
     { name: 'effectNoDeps', run: () => detectEffectNoDeps(pf) },
@@ -24,15 +24,33 @@ export function runAllDetectors(pf: ParsedFile, files: Map<string, string>): Iss
     { name: 'apiInComponent', run: () => detectApiInComponent(pf) },
     { name: 'missingErrorBoundary', run: () => detectMissingErrorBoundary(pf) },
     { name: 'memoryLeaks', run: () => detectMemoryLeaks(pf) },
-    { name: 'duplicateLogic', run: () => detectDuplicateLogic(pf, files) },
   ];
 
-  for (const detector of detectors) {
+  for (const detector of perFileDetectors) {
     try {
       const detected = detector.run();
       issues.push(...detected);
     } catch (error) {
       console.error(`Error in detector ${detector.name} for file ${pf.filePath}:`, error);
+    }
+  }
+
+  return issues;
+}
+
+export function runCrossFileDetectors(parsedCache: Map<string, ParsedFile>): Issue[] {
+  const issues: Issue[] = [];
+
+  const crossFileDetectors = [
+    { name: 'duplicateLogic', run: () => detectDuplicateLogic(parsedCache) },
+  ];
+
+  for (const detector of crossFileDetectors) {
+    try {
+      const detected = detector.run();
+      issues.push(...detected);
+    } catch (error) {
+      console.error(`Error in cross-file detector ${detector.name}:`, error);
     }
   }
 

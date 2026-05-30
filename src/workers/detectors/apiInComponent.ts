@@ -1,10 +1,9 @@
 // src/workers/detectors/apiInComponent.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../analysis.worker';
+import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../../lib/analyze';
 
 interface ApiCall {
   url: string;
-  node: TSESTree.CallExpression;
+  node: any;
   line: number;
   endLine: number;
 }
@@ -13,12 +12,12 @@ export function detectApiInComponent(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
 
   walk(pf.ast, {
-    FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+    FunctionDeclaration(node: any) {
       if (node.id && /^[A-Z]/.test(node.id.name)) {
         analyzeComponent(node, node.id.name);
       }
     },
-    VariableDeclarator(node: TSESTree.VariableDeclarator) {
+    VariableDeclarator(node: any) {
       if (
         node.init &&
         (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression') &&
@@ -44,12 +43,12 @@ export function detectApiInComponent(pf: ParsedFile): Issue[] {
     return 'local-api';
   }
 
-  function analyzeComponent(compNode: TSESTree.Node, compName: string) {
+  function analyzeComponent(compNode: any, compName: string) {
     const apiCalls: ApiCall[] = [];
 
     // Find all fetch/axios call expressions inside this component
     walk(compNode, {
-      CallExpression(node: TSESTree.CallExpression) {
+      CallExpression(node: any) {
         let isApi = false;
         let urlArg = '';
 
@@ -75,7 +74,7 @@ export function detectApiInComponent(pf: ParsedFile): Issue[] {
           if (firstArg.type === 'Literal' && typeof firstArg.value === 'string') {
             urlArg = firstArg.value;
           } else if (firstArg.type === 'TemplateLiteral') {
-            urlArg = firstArg.quasis.map(q => q.value.raw).join('${var}');
+            urlArg = firstArg.quasis.map((q: any) => q.value.raw).join('${var}');
           } else {
             urlArg = 'dynamic-url';
           }
@@ -88,9 +87,9 @@ export function detectApiInComponent(pf: ParsedFile): Issue[] {
         }
       },
       // Do not enter nested components
-      FunctionDeclaration(n) { (n as any)._skip = true; },
-      FunctionExpression(n) { (n as any)._skip = true; },
-      ArrowFunctionExpression(n) { (n as any)._skip = true; },
+      FunctionDeclaration(_node, skip) { skip?.() },
+      FunctionExpression(_node, skip) { skip?.() },
+      ArrowFunctionExpression(_node, skip) { skip?.() },
     });
 
     if (apiCalls.length === 0) return;

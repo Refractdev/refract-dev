@@ -1,6 +1,5 @@
 import { getAuthenticatedUser } from '../_lib/auth'
 import { githubRequest, parseGitHubRepoUrl } from '../_lib/github'
-import { applyRateLimitHeaders, checkRateLimit } from '../_lib/ratelimit'
 
 interface PullRequestChange {
   filePath: string
@@ -13,19 +12,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { user, plan, githubToken } = await getAuthenticatedUser(req.headers.authorization)
-    const limitResult = await checkRateLimit(user.id, plan)
-    applyRateLimitHeaders(res, limitResult)
-
-    if (!limitResult.success) {
-      return res.status(429).json({
-        error: 'Rate limit exceeded',
-        message: plan === 'free'
-          ? 'Limite do plano Free atingido (20/hora). Faz upgrade para Pro.'
-          : `Limite atingido. Reset: ${new Date(limitResult.reset).toLocaleTimeString('pt-PT')}`,
-        reset: limitResult.reset,
-      })
-    }
+    const { githubToken } = await getAuthenticatedUser(req.headers.authorization)
 
     if (!githubToken) {
       return res.status(400).json({ error: 'GitHub account not connected' })

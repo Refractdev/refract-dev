@@ -71,6 +71,7 @@ export interface AnalysisResult {
   scannedFiles: string[]
   issues: AnalysisIssue[]
   truncated?: boolean
+  dependencies: Record<string, string[]>
   summary: {
     total: number
     high: number

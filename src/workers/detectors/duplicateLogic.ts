@@ -1,6 +1,4 @@
-// src/workers/detectors/duplicateLogic.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, lineOf, endLineOf, parseFile } from '../analysis.worker';
+import { Issue, ParsedFile, walk, lineOf, endLineOf } from '../../lib/analyze';
 
 interface FuncInfo {
   name: string;
@@ -12,46 +10,51 @@ interface FuncInfo {
   code: string;
 }
 
-export function detectDuplicateLogic(pf: ParsedFile, files: Map<string, string>): Issue[] {
+const MAX_FUNC_COMPARE = 50_000; // bail if we'd exceed this many comparisons
+
+export function detectDuplicateLogic(parsedCache: Map<string, ParsedFile>): Issue[] {
   const issues: Issue[] = [];
-  const currentFuncs: FuncInfo[] = [];
+  const allFuncs: FuncInfo[] = [];
 
-  // 1. Gather all functions in the current file
-  gatherFunctions(pf, currentFuncs);
-
-  if (currentFuncs.length === 0) return issues;
-
-  // 2. Parse functions in all other files (only if filePath comes after in lexicographical order to prevent duplicates)
-  const otherFuncs: FuncInfo[] = [];
-  for (const [otherPath, otherContent] of files.entries()) {
-    if (otherPath === pf.filePath) continue;
-    // Lexicographical ordering constraint to deduplicate cross-file findings
-    if (pf.filePath >= otherPath) continue;
-
-    const otherParsed = parseFile(otherPath, otherContent);
-    if (!otherParsed) continue;
-
-    gatherFunctions(otherParsed, otherFuncs);
+  // 1. Gather all functions across all files
+  for (const pf of parsedCache.values()) {
+    gatherFunctions(pf, allFuncs);
   }
 
-  // 3. Compare current file functions with other file functions
-  for (const f1 of currentFuncs) {
-    // Skip small or trivial functions
-    if (f1.signature.length < 3 || (f1.endLine - f1.line) < 4) continue;
+  console.log('[duplicateLogic] Collected', allFuncs.length, 'functions across', parsedCache.size, 'files');
 
-    for (const f2 of otherFuncs) {
-      if (f2.signature.length < 3 || (f2.endLine - f2.line) < 4) continue;
+  const candidates = allFuncs.filter(f => f.signature.length >= 3 && (f.endLine - f.line) >= 4);
+  const n = candidates.length;
+  const totalComparisons = (n * (n - 1)) / 2;
+
+  if (totalComparisons > MAX_FUNC_COMPARE) {
+    console.warn(`[duplicateLogic] Skipping: ${totalComparisons} comparisons would exceed limit of ${MAX_FUNC_COMPARE}`);
+    return issues;
+  }
+
+  let comparisons = 0;
+
+  // 2. Compare every pair of functions once
+  for (let i = 0; i < n; i++) {
+    const f1 = candidates[i];
+
+    for (let j = i + 1; j < n; j++) {
+      comparisons++;
+      const f2 = candidates[j];
+
+      // Skip functions in the same file
+      if (f1.filePath === f2.filePath) continue;
 
       const sim = getSimilarity(f1.signature, f2.signature);
       if (sim >= 0.8) {
-        const lineText = pf.lines.slice(f1.line - 1, f1.endLine).join('\n');
+        const lineText = f1.code;
         const suggestText = `// Lógica duplicada detetada com ${f2.fileName}. Move para src/utils/shared.ts\n` +
           `// export function ${f1.name || 'sharedHelper'}() { ... }`;
 
         issues.push({
-          id: `duplicate-logic-${pf.filePath}-${f1.line}-${f2.fileName}-${f2.line}`,
-          file: pf.fileName,
-          filePath: pf.filePath,
+          id: `duplicate-logic-${f1.filePath}-${f1.line}-${f2.fileName}-${f2.line}`,
+          file: f1.fileName,
+          filePath: f1.filePath,
           category: 'duplicate-logic',
           problem: `Lógica duplicada detetada: a função \`${f1.name || 'anónima'}\` é 80%+ similar à função \`${f2.name || 'anónima'}\` em \`${f2.fileName}\`. Move para um utilitário partilhado`,
           impact: 'Medium',
@@ -64,12 +67,13 @@ export function detectDuplicateLogic(pf: ParsedFile, files: Map<string, string>)
     }
   }
 
+  console.log('[duplicateLogic] Performed', comparisons, 'comparisons, found', issues.length, 'issues');
   return issues;
 }
 
 function gatherFunctions(parsed: ParsedFile, list: FuncInfo[]) {
   walk(parsed.ast, {
-    FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+    FunctionDeclaration(node: any) {
       const start = lineOf(node);
       const end = endLineOf(node);
       list.push({
@@ -82,7 +86,7 @@ function gatherFunctions(parsed: ParsedFile, list: FuncInfo[]) {
         code: parsed.lines.slice(start - 1, end).join('\n'),
       });
     },
-    VariableDeclarator(node: TSESTree.VariableDeclarator) {
+    VariableDeclarator(node: any) {
       if (
         node.id.type === 'Identifier' &&
         node.init &&
@@ -104,7 +108,7 @@ function gatherFunctions(parsed: ParsedFile, list: FuncInfo[]) {
   });
 }
 
-function buildSignature(funcNode: TSESTree.Node): string[] {
+function buildSignature(funcNode: any): string[] {
   const features: string[] = [];
 
   // Number of parameters
@@ -113,7 +117,7 @@ function buildSignature(funcNode: TSESTree.Node): string[] {
 
   // Collect operations inside
   walk(funcNode, {
-    CallExpression(node: TSESTree.CallExpression) {
+    CallExpression(node: any) {
       if (node.callee.type === 'MemberExpression' && node.callee.property.type === 'Identifier') {
         const prop = node.callee.property.name;
         if (['map', 'filter', 'reduce', 'forEach', 'find', 'push', 'slice', 'some', 'every'].includes(prop)) {
@@ -124,7 +128,7 @@ function buildSignature(funcNode: TSESTree.Node): string[] {
         }
       }
     },
-    BinaryExpression(node: TSESTree.BinaryExpression) {
+    BinaryExpression(node: any) {
       if (['+', '-', '*', '/'].includes(node.operator)) {
         features.push(`arithmetic:${node.operator}`);
       }

@@ -20,7 +20,7 @@ interface ApiCallCandidate {
   kind: 'fetch' | 'axios'
 }
 
-export async function runApiCentralization(fileMap: Map<string, string>): Promise<TransformProposal[]> {
+export async function runApiCentralization(fileMap: Map<string, string>, guidelines?: string): Promise<TransformProposal[]> {
   const proposals: TransformProposal[] = []
   const servicePath = 'src/services/api.ts'
   const existingService = fileMap.get(servicePath) ?? ''
@@ -31,6 +31,7 @@ export async function runApiCentralization(fileMap: Map<string, string>): Promis
     try {
       const ast = parseSource(source, filePath)
       const apiCalls = getComponents(ast.body).flatMap((component) => collectApiCalls(component.node, source, component.name))
+      console.log(`[apiCentralization] file: ${filePath}, apiCalls.length: ${apiCalls.length}`)
       if (apiCalls.length === 0) continue
 
       const generatedCalls = apiCalls.map((apiCall, index) => ({
@@ -83,7 +84,8 @@ export async function runApiCentralization(fileMap: Map<string, string>): Promis
           breakageSurface: 0,
         },
       })
-    } catch {
+    } catch (err) {
+      console.error(`[runApiCentralization] error:`, err)
       continue
     }
   }
@@ -94,7 +96,13 @@ export async function runApiCentralization(fileMap: Map<string, string>): Promis
 function getComponents(nodes: TSESTree.ProgramStatement[]): ComponentCandidate[] {
   const components: ComponentCandidate[] = []
 
-  for (const node of nodes) {
+  for (let node of nodes) {
+    if (node.type === AST_NODE_TYPES.ExportDefaultDeclaration || node.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+      if (node.declaration) {
+        node = node.declaration as any
+      }
+    }
+
     if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id && /^[A-Z]/.test(node.id.name) && returnsJsx(node.body)) {
       components.push({ name: node.id.name, node })
       continue
@@ -141,9 +149,9 @@ function collectApiCalls(
       }
     }
 
-    for (const value of Object.values(node)) {
-      if (!value || typeof value !== 'object') continue
-      if (Array.isArray(value)) value.forEach((child) => child && 'type' in child && visit(child as TSESTree.Node))
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'parent' || !value || typeof value !== 'object') continue
+      if (Array.isArray(value)) value.forEach((child) => child && typeof child === 'object' && 'type' in child && visit(child as TSESTree.Node))
       else if ('type' in value) visit(value as TSESTree.Node)
     }
   }

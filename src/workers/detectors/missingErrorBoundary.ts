@@ -1,18 +1,17 @@
 // src/workers/detectors/missingErrorBoundary.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../analysis.worker';
+import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../../lib/analyze';
 
 export function detectMissingErrorBoundary(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
   if (!pf.isTsx) return issues;
 
   walk(pf.ast, {
-    FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+    FunctionDeclaration(node: any) {
       if (node.id && /^[A-Z]/.test(node.id.name)) {
         analyzeComponent(node, node.id.name);
       }
     },
-    VariableDeclarator(node: TSESTree.VariableDeclarator) {
+    VariableDeclarator(node: any) {
       if (
         node.init &&
         (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression') &&
@@ -24,12 +23,12 @@ export function detectMissingErrorBoundary(pf: ParsedFile): Issue[] {
     },
   });
 
-  function analyzeComponent(compNode: TSESTree.Node, compName: string) {
+  function analyzeComponent(compNode: any, compName: string) {
     let hasAsync = false;
 
     // Check if there is any fetch/axios call or async function / promise handling
     walk(compNode, {
-      CallExpression(node: TSESTree.CallExpression) {
+      CallExpression(node: any) {
         if (node.callee.type === 'Identifier' && (node.callee.name === 'fetch' || node.callee.name === 'axios')) {
           hasAsync = true;
         }
@@ -45,9 +44,9 @@ export function detectMissingErrorBoundary(pf: ParsedFile): Issue[] {
         hasAsync = true;
       },
       // Do not enter nested components
-      FunctionDeclaration(n) { (n as any)._skip = true; },
-      FunctionExpression(n) { (n as any)._skip = true; },
-      ArrowFunctionExpression(n) { (n as any)._skip = true; },
+      FunctionDeclaration(_node, skip) { skip?.() },
+      FunctionExpression(_node, skip) { skip?.() },
+      ArrowFunctionExpression(_node, skip) { skip?.() },
     });
 
     if (!hasAsync) return;
@@ -57,7 +56,7 @@ export function detectMissingErrorBoundary(pf: ParsedFile): Issue[] {
     let errorVarName = '';
 
     walk(compNode, {
-      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+      VariableDeclarator(node: any) {
         if (
           node.init &&
           node.init.type === 'CallExpression' &&
@@ -74,18 +73,18 @@ export function detectMissingErrorBoundary(pf: ParsedFile): Issue[] {
         }
       },
       // Do not enter nested components
-      FunctionDeclaration(n) { (n as any)._skip = true; },
-      FunctionExpression(n) { (n as any)._skip = true; },
-      ArrowFunctionExpression(n) { (n as any)._skip = true; },
+      FunctionDeclaration(_node, skip) { skip?.() },
+      FunctionExpression(_node, skip) { skip?.() },
+      ArrowFunctionExpression(_node, skip) { skip?.() },
     });
 
     // Check if errorVarName is rendered in JSX return statements
     let isErrorRendered = false;
     if (hasErrorState && errorVarName) {
       walk(compNode, {
-        ReturnStatement(node: TSESTree.ReturnStatement) {
+        ReturnStatement(node: any) {
           if (node.argument) {
-            const identifiers = findAll(node.argument, 'Identifier') as TSESTree.Identifier[];
+            const identifiers = findAll(node.argument, 'Identifier') as any[];
             if (identifiers.some(id => id.name === errorVarName)) {
               isErrorRendered = true;
             }

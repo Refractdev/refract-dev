@@ -1,6 +1,5 @@
 import Groq from 'groq-sdk'
-import { getAuthenticatedUser } from '../_lib/auth'
-import { applyRateLimitHeaders, checkRateLimit } from '../_lib/ratelimit'
+import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' })
 
@@ -9,46 +8,31 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  let user: { id: string }
-  let plan = 'free'
   try {
-    const auth = await getAuthenticatedUser(req.headers.authorization)
-    user = auth.user
-    plan = auth.plan
+    await getAuthenticatedUserWithOptionalGitHub(req.headers.authorization)
   } catch (error: any) {
     return res.status(401).json({ error: error.message || 'Unauthorized' })
   }
 
-  const limitResult = await checkRateLimit(user.id, plan)
-  applyRateLimitHeaders(res, limitResult)
+  const { issue, fileSource, guidelines } = req.body
 
-  if (!limitResult.success) {
-    return res.status(429).json({
-      error: 'Rate limit exceeded',
-      message: plan === 'free'
-        ? 'Limite do plano Free atingido (20/hora). Faz upgrade para Pro.'
-        : `Limite atingido. Reset: ${new Date(limitResult.reset).toLocaleTimeString('pt-PT')}`,
-      reset: limitResult.reset,
-    })
-  }
+  const systemPrompt = `És um especialista em mensagens de commit para TypeScript/React.
+Gera uma mensagem de commit concisa (máximo 1 linha) em português europeu.
+Formato: verbo no infinitivo + descrição curta do que foi feito.
+Exemplo: "Corrigir componente UserCard para usar props tipadas"
+Não incluas explicações. Não uses markdown. Apenas a mensagem.`
 
-  const { issue, fileSource, instruction, guidelines } = req.body
-
-  const systemPrompt = `És um especialista em refactorização TypeScript/React.
-Devolve APENAS um JSON com formato { "before": "...", "after": "..." }.
-O campo "after" deve conter o código corrigido para o problema indicado.
-Não incluas explicações. Não uses markdown. Apenas o JSON puro.`
-
-  const userPrompt = `Problema: ${issue.category} — ${issue.problem}
+  const userPrompt = `Issue: ${issue.category} — ${issue.problem}
+Ficheiro: ${issue.file}
+Impacto: ${issue.impact}
 Contexto:
 ${fileSource || issue.lines.before?.join('\n') || ''}
-${instruction ? `\nInstrução adicional: ${instruction}` : ''}
 ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
 
   try {
     const msg = await groq.chat.completions.create({
-      model: 'mixtral-8x7b-32768',
-      max_tokens: 1024,
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: 128,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -56,18 +40,10 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
       temperature: 0.2,
     })
 
-    const text = msg.choices[0]?.message?.content ?? '{}'
-
-    let patch: { before: string; after: string }
-    try {
-      patch = JSON.parse(text)
-    } catch {
-      patch = { before: issue.lines.before?.join('\n') || '', after: text }
-    }
-
-    return res.status(200).json({ patch })
+    const commitMessage = (msg.choices[0]?.message?.content ?? '').trim()
+    return res.status(200).json({ commitMessage })
   } catch (err: any) {
-    console.error('Refactor error:', err)
-    return res.status(500).json({ error: err.message || 'Failed to generate refactor' })
+    console.error('Commit message error:', err)
+    return res.status(500).json({ error: err.message || 'Failed to generate commit message' })
   }
 }

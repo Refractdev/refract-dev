@@ -1,15 +1,14 @@
 // src/workers/detectors/effectNoDeps.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../analysis.worker';
+import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../../lib/analyze';
 
 export function detectEffectNoDeps(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
 
   walk(pf.ast, {
-    FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+    FunctionDeclaration(node: any) {
       analyzeComponent(node);
     },
-    VariableDeclarator(node: TSESTree.VariableDeclarator) {
+    VariableDeclarator(node: any) {
       if (
         node.init &&
         (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression') &&
@@ -21,7 +20,7 @@ export function detectEffectNoDeps(pf: ParsedFile): Issue[] {
     },
   });
 
-  function analyzeComponent(compNode: TSESTree.Node) {
+  function analyzeComponent(compNode: any) {
     // 1. Gather all component-scope identifiers (props, useState states, variables)
     const compVariables = new Set<string>();
 
@@ -43,7 +42,7 @@ export function detectEffectNoDeps(pf: ParsedFile): Issue[] {
 
     // Gather states and variable declarations inside the component
     walk(compNode, {
-      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+      VariableDeclarator(node: any) {
         if (node.id.type === 'Identifier') {
           compVariables.add(node.id.name);
         } else if (node.id.type === 'ArrayPattern') {
@@ -60,19 +59,19 @@ export function detectEffectNoDeps(pf: ParsedFile): Issue[] {
           }
         }
       },
-      FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+      FunctionDeclaration(node: any) {
         if (node.id) {
           compVariables.add(node.id.name);
         }
       },
       // Do not enter nested components
-      FunctionExpression(node) { (node as any)._skip = true; },
-      ArrowFunctionExpression(node) { (node as any)._skip = true; },
+      FunctionExpression(_node, skip) { skip?.() },
+      ArrowFunctionExpression(_node, skip) { skip?.() },
     });
 
     // 2. Find all useEffect calls
     walk(compNode, {
-      CallExpression(node: TSESTree.CallExpression) {
+      CallExpression(node: any) {
         if (
           node.callee.type === 'Identifier' &&
           node.callee.name === 'useEffect' &&
@@ -107,12 +106,12 @@ export function detectEffectNoDeps(pf: ParsedFile): Issue[] {
           const declaredInCallback = new Set<string>();
 
           walk(callback, {
-            VariableDeclarator(vDec: TSESTree.VariableDeclarator) {
+            VariableDeclarator(vDec: any) {
               if (vDec.id.type === 'Identifier') {
                 declaredInCallback.add(vDec.id.name);
               }
             },
-            Identifier(id: TSESTree.Identifier) {
+            Identifier(id: any) {
               // Ensure we are referencing a variable, not a property access object/property or function name
               const parent = (id as any).parent;
               if (parent && parent.type === 'MemberExpression' && parent.property === id && !parent.computed) {
@@ -164,7 +163,7 @@ export function detectEffectNoDeps(pf: ParsedFile): Issue[] {
           // Case C: fetch/async call but no cleanup returned
           let hasAsyncOrFetch = false;
           walk(callback, {
-            CallExpression(call: TSESTree.CallExpression) {
+            CallExpression(call: any) {
               if (call.callee.type === 'Identifier' && (call.callee.name === 'fetch' || call.callee.name === 'axios')) {
                 hasAsyncOrFetch = true;
               }
@@ -176,7 +175,7 @@ export function detectEffectNoDeps(pf: ParsedFile): Issue[] {
 
           let hasCleanup = false;
           walk(callback, {
-            ReturnStatement(ret: TSESTree.ReturnStatement) {
+            ReturnStatement(ret: any) {
               if (
                 ret.argument &&
                 (ret.argument.type === 'ArrowFunctionExpression' ||
@@ -215,7 +214,7 @@ export function detectEffectNoDeps(pf: ParsedFile): Issue[] {
             const setterName = `set${depName.charAt(0).toUpperCase() + depName.slice(1)}`;
             let callsSetter = false;
             walk(callback, {
-              CallExpression(call: TSESTree.CallExpression) {
+              CallExpression(call: any) {
                 if (call.callee.type === 'Identifier' && call.callee.name === setterName) {
                   // If it's a functional update (e.g. setCount(c => c + 1)), it's safe!
                   const arg = call.arguments[0];
@@ -250,9 +249,9 @@ export function detectEffectNoDeps(pf: ParsedFile): Issue[] {
         }
       },
       // Do not enter nested components
-      FunctionDeclaration(node) { (node as any)._skip = true; },
-      FunctionExpression(node) { (node as any)._skip = true; },
-      ArrowFunctionExpression(node) { (node as any)._skip = true; },
+      FunctionDeclaration(_node, skip) { skip?.() },
+      FunctionExpression(_node, skip) { skip?.() },
+      ArrowFunctionExpression(_node, skip) { skip?.() },
     });
   }
 

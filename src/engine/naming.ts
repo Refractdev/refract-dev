@@ -20,6 +20,7 @@ export async function suggestSemanticComponentName(context: {
   ownerName: string
   currentName: string
   symbols: string[]
+  guidelines?: string
 }): Promise<string> {
   const fallback = toPascalCase(context.currentName.replace(/^render/, '') || `${context.ownerName}Section`)
 
@@ -30,6 +31,7 @@ export async function suggestSemanticComponentName(context: {
       currentName: context.currentName,
       ownerName: context.ownerName,
       symbols: context.symbols,
+      guidelines: context.guidelines,
     })
     return toPascalCase(suggested)
   } catch {
@@ -42,6 +44,7 @@ export async function suggestSemanticHookName(context: {
   ownerName: string
   currentName: string
   symbols: string[]
+  guidelines?: string
 }): Promise<string> {
   const base = context.currentName || `${context.ownerName}State`
 
@@ -52,6 +55,7 @@ export async function suggestSemanticHookName(context: {
       currentName: base,
       ownerName: context.ownerName,
       symbols: context.symbols,
+      guidelines: context.guidelines,
     })
     return `use${toPascalCase(suggested).replace(/^Use/, '')}`
   } catch {

@@ -1,12 +1,11 @@
 // src/workers/detectors/memoryLeaks.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../analysis.worker';
+import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../../lib/analyze';
 
 export function detectMemoryLeaks(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
 
   walk(pf.ast, {
-    CallExpression(node: TSESTree.CallExpression) {
+    CallExpression(node: any) {
       if (
         node.callee.type === 'Identifier' &&
         node.callee.name === 'useEffect' &&
@@ -29,7 +28,7 @@ export function detectMemoryLeaks(pf: ParsedFile): Issue[] {
 
         // 1. Traverse callback to find setInterval/setTimeout and addEventListener
         walk(callback, {
-          CallExpression(call: TSESTree.CallExpression) {
+          CallExpression(call: any) {
             if (call.callee.type === 'Identifier') {
               const name = call.callee.name;
               if (name === 'setTimeout' || name === 'setInterval') {
@@ -58,15 +57,15 @@ export function detectMemoryLeaks(pf: ParsedFile): Issue[] {
             }
           },
           // Do not enter nested cleanup function definitions to avoid mixing scopes
-          ReturnStatement(ret) {
-            (ret as any)._skip = true;
+          ReturnStatement(_ret, skip) {
+            skip?.();
           },
         });
 
         // 2. Find cleanup function and inspect it
-        let cleanupNode: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | TSESTree.Identifier | null = null;
+        let cleanupNode: any = null;
         walk(callback, {
-          ReturnStatement(ret: TSESTree.ReturnStatement) {
+          ReturnStatement(ret: any) {
             if (
               ret.argument &&
               (ret.argument.type === 'ArrowFunctionExpression' ||
@@ -84,7 +83,7 @@ export function detectMemoryLeaks(pf: ParsedFile): Issue[] {
           let hasClear = false;
           if (cleanupNode) {
             walk(cleanupNode, {
-              CallExpression(call: TSESTree.CallExpression) {
+              CallExpression(call: any) {
                 if (call.callee.type === 'Identifier') {
                   const name = call.callee.name;
                   const expectedClear = timerType === 'Timeout' ? 'clearTimeout' : 'clearInterval';
@@ -123,7 +122,7 @@ export function detectMemoryLeaks(pf: ParsedFile): Issue[] {
           let hasRemove = false;
           if (cleanupNode) {
             walk(cleanupNode, {
-              CallExpression(call: TSESTree.CallExpression) {
+              CallExpression(call: any) {
                 if (call.callee.type === 'MemberExpression') {
                   const prop = call.callee.property;
                   if (prop.type === 'Identifier' && prop.name === 'removeEventListener') {

@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type { AnalysisIssue } from '../shared/types'
+import type { SafetyResult } from '../engine/types'
 
 export class RateLimitError extends Error {
   reset: number
@@ -51,6 +52,7 @@ export interface RefactorNameRequest {
   currentName: string
   ownerName: string
   symbols: string[]
+  guidelines?: string
 }
 
 async function getAccessToken(): Promise<string> {
@@ -91,12 +93,11 @@ export async function explainIssue(issue: AnalysisIssue, fileSource: string, gui
   return data.explanation
 }
 
-export async function refactorIssue(
+export async function generateCommitMessage(
   issue: AnalysisIssue,
   fileSource: string,
-  instruction?: string,
   guidelines?: string
-): Promise<{ before: string; after: string }> {
+): Promise<string> {
   const accessToken = await getAccessToken()
 
   const response = await fetch('/api/ai/refactor', {
@@ -105,11 +106,11 @@ export async function refactorIssue(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ issue, fileSource, instruction, guidelines }),
+    body: JSON.stringify({ issue, fileSource, guidelines }),
   })
 
-  const data = await readResponse<{ patch: { before: string; after: string } }>(response, 'Failed to refactor issue')
-  return data.patch
+  const data = await readResponse<{ commitMessage: string }>(response, 'Failed to generate commit message')
+  return data.commitMessage
 }
 
 export async function generateBriefing(
@@ -147,6 +148,55 @@ export async function suggestRefactorName(input: RefactorNameRequest): Promise<s
 
   const data = await readResponse<{ name: string }>(response, 'Failed to suggest refactor name')
   return data.name
+}
+
+// ─── Drift Monitor API ─────────────────────────────────────────────────────────
+
+export interface DriftReport {
+  projectId: string
+  totalSnapshots: number
+  currentScore: number
+  previousScore: number | null
+  scoreDelta: number | null
+  trends: Array<{
+    category: string
+    slope: number
+    direction: 'improving' | 'stable' | 'worsening'
+    currentCount: number
+    averageCount: number
+  }>
+  anomalies: Array<{
+    category: string
+    type: 'spike' | 'drop'
+    currentCount: number
+    expectedCount: number
+    deviationPercent: number
+    severity: 'info' | 'warning' | 'critical'
+  }>
+  decayHotspots: Array<{
+    filePath: string
+    fileName: string
+    appearances: number
+    latestCount: number
+    growthRate: number
+    severity: 'warning' | 'critical'
+  }>
+  alerts: Array<{
+    alert_type: 'score_drop' | 'category_spike' | 'anomaly' | 'decay_hotspot' | 'architectural_drift'
+    severity: 'info' | 'warning' | 'critical'
+    message: string
+    metadata: Record<string, unknown>
+  }>
+}
+
+export async function fetchDriftReport(projectId: string): Promise<DriftReport> {
+  const accessToken = await getAccessToken()
+  const response = await fetch(`/api/analysis/drift?projectId=${encodeURIComponent(projectId)}`, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+    },
+  })
+  return readResponse<DriftReport>(response, 'Failed to fetch drift report')
 }
 
 // ─── Codemap API ─────────────────────────────────────────────────────────────
@@ -211,4 +261,29 @@ export async function createGitHubPullRequest(input: GitHubPullRequestInput): Pr
   })
 
   return readResponse<{ url: string }>(response, 'Failed to create PR')
+}
+
+export interface ValidateProposalInput {
+  projectPath?: string
+  filePath: string
+  before: string
+  after: string
+  newFiles?: Array<{ path: string; content: string }>
+  fileMap?: Record<string, string>
+  engineResult?: SafetyResult
+}
+
+export async function validateProposalSafety(input: ValidateProposalInput): Promise<SafetyResult> {
+  const accessToken = await getAccessToken()
+
+  const response = await fetch('/api/safety/validate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(input),
+  })
+
+  return readResponse<any>(response, 'Safety validation failed')
 }

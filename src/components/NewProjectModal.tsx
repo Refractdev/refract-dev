@@ -41,7 +41,7 @@ function getRepoNameFromUrl(url: string): string {
 
 export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, onNavigate }) => {
   const { profile, installGitHubApp } = useAuth();
-  const { setFileMap } = useFiles();
+  const { setFileMap, setProjectId } = useFiles();
 
   const [step, setStep] = useState<'method' | 'git-url'>('method');
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
       const repoName = getRepoNameFromUrl(url);
 
       const cloneResult = await cloneGitHubRepo(url, branch);
-      setFileMap(new Map(Object.entries(cloneResult.files)));
+      const fileMap = new Map(Object.entries(cloneResult.files));
 
       let project: Project;
 
@@ -113,6 +113,8 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
         };
       }
 
+      setProjectId(project.id);
+      setFileMap(fileMap);
       onProjectCreated(project);
     } catch (err) {
       setError(getInlineError(err, 'Failed to import repository.'));

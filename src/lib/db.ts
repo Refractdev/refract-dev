@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type { Project, Activity } from '../shared/types'
+import { deleteProjectFiles } from './fileStore'
 
 // ─── Guard + Timeout ──────────────────────────────────────────────────────────
 //
@@ -100,6 +101,7 @@ export async function deleteProject(id: string): Promise<void> {
       .eq('id', id)
   )
   if (error) throw error
+  await deleteProjectFiles(id)
 }
 
 // ─── Activity ────────────────────────────────────────────────────────────────

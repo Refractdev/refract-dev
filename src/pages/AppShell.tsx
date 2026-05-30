@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { HomePage } from './HomePage';
 import { ProjectsPage } from './ProjectsPage';
 import { ReposPage } from './ReposPage';
-import { GuidelinesPage } from './GuidelinesPage';
 import { SettingsPage } from './SettingsPage';
 import { ProjectView } from './projectView/ProjectView';
 import { Sidebar } from '../components/Sidebar';
@@ -52,7 +51,7 @@ function routeToPage(pathname: string): Page {
     case '/repos':
       return 'repos';
     case '/guidelines':
-      return 'guidelines';
+      return 'settings'; // guidelines redirects to settings
     case '/settings':
       return 'settings';
     case '/project-view':
@@ -69,7 +68,7 @@ function pageToRoute(page: Page): string {
     case 'repos':
       return '/repos';
     case 'guidelines':
-      return '/guidelines';
+      return '/settings?tab=guidelines'; // redirect to settings guidelines
     case 'settings':
       return '/settings';
     case 'projectView':
@@ -82,11 +81,29 @@ function pageToRoute(page: Page): string {
 export const AppShell: React.FC = () => {
   const { session, loading, profile, refreshProfile } = useAuth();
   const [activePage, setActivePage] = useState<Page>(() => routeToPage(window.location.pathname));
+  const [activeSettingsTab, setActiveSettingsTab] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab) return tab;
+    if (window.location.pathname === '/guidelines') return 'guidelines';
+    return 'profile';
+  });
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
   React.useEffect(() => {
     const syncPageFromLocation = () => {
-      setActivePage(routeToPage(window.location.pathname));
+      const page = routeToPage(window.location.pathname);
+      setActivePage(page);
+      
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab) {
+        setActiveSettingsTab(tab);
+      } else if (window.location.pathname === '/guidelines') {
+        setActiveSettingsTab('guidelines');
+      } else {
+        setActiveSettingsTab('profile');
+      }
     };
 
     window.addEventListener('popstate', syncPageFromLocation);
@@ -131,8 +148,28 @@ export const AppShell: React.FC = () => {
       setActiveProjectId(params.projectId);
     }
     const normalizedPage = page === 'project-view' ? 'projectView' : (page as Page);
+    
+    if (normalizedPage === 'guidelines') {
+      setActivePage('settings');
+      setActiveSettingsTab('guidelines');
+      window.history.pushState({}, '', '/settings?tab=guidelines');
+      return;
+    }
+
     setActivePage(normalizedPage);
-    window.history.pushState({}, '', pageToRoute(normalizedPage));
+
+    if (normalizedPage === 'settings') {
+      const targetTab = params?.tab || 'profile';
+      setActiveSettingsTab(targetTab);
+      window.history.pushState({}, '', `/settings?tab=${targetTab}`);
+    } else {
+      window.history.pushState({}, '', pageToRoute(normalizedPage));
+    }
+  };
+
+  const handleSettingsTabChange = (tab: string) => {
+    setActiveSettingsTab(tab);
+    window.history.pushState({}, '', `/settings?tab=${tab}`);
   };
 
   const renderPage = () => {
@@ -140,8 +177,7 @@ export const AppShell: React.FC = () => {
       case 'home':        return <HomePage onNavigate={handleNavigate} />;
       case 'projects':    return <ProjectsPage onOpenProject={(id) => handleNavigate('projectView', { projectId: id })} onNavigate={handleNavigate} />;
       case 'repos':       return <ReposPage onNavigate={handleNavigate} />;
-      case 'guidelines':  return <GuidelinesPage />;
-      case 'settings':    return <SettingsPage />;
+      case 'settings':    return <SettingsPage activeTab={activeSettingsTab} onTabChange={handleSettingsTabChange} />;
       case 'projectView': return <ProjectView projectId={activeProjectId} onBack={() => handleNavigate('home')} />;
       default:            return <HomePage onNavigate={handleNavigate} />;
     }
@@ -150,7 +186,12 @@ export const AppShell: React.FC = () => {
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--canvas)' }}>
       {activePage !== 'projectView' && (
-        <Sidebar activePage={activePage} onNavigate={(p) => handleNavigate(p)} />
+        <Sidebar 
+          activePage={activePage} 
+          onNavigate={(p) => handleNavigate(p)} 
+          activeSettingsTab={activeSettingsTab}
+          onSettingsTabChange={handleSettingsTabChange}
+        />
       )}
       <main style={{ flex: 1, overflow: 'hidden', height: '100vh' }}>
         <ErrorBoundary>

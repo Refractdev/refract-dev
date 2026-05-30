@@ -1,6 +1,5 @@
 import Groq from 'groq-sdk'
-import { getAuthenticatedUser } from '../_lib/auth'
-import { applyRateLimitHeaders, checkRateLimit } from '../_lib/ratelimit'
+import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' })
 
@@ -9,27 +8,10 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  let user: { id: string }
-  let plan = 'free'
   try {
-    const auth = await getAuthenticatedUser(req.headers.authorization)
-    user = auth.user
-    plan = auth.plan
+    await getAuthenticatedUserWithOptionalGitHub(req.headers.authorization)
   } catch (error: any) {
     return res.status(401).json({ error: error.message || 'Unauthorized' })
-  }
-
-  const limitResult = await checkRateLimit(user.id, plan)
-  applyRateLimitHeaders(res, limitResult)
-
-  if (!limitResult.success) {
-    return res.status(429).json({
-      error: 'Rate limit exceeded',
-      message: plan === 'free'
-        ? 'Limite do plano Free atingido (20/hora). Faz upgrade para Pro.'
-        : `Limite atingido. Reset: ${new Date(limitResult.reset).toLocaleTimeString('pt-PT')}`,
-      reset: limitResult.reset,
-    })
   }
 
   const { projectPath, issues, scannedFiles, guidelines } = req.body
@@ -60,7 +42,7 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
 
   try {
     const msg = await groq.chat.completions.create({
-      model: 'mixtral-8x7b-32768',
+      model: 'llama-3.3-70b-versatile',
       max_tokens: 256,
       messages: [
         { role: 'system', content: systemPrompt },

@@ -1,17 +1,16 @@
 // src/workers/detectors/propDrilling.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../analysis.worker';
+import { Issue, ParsedFile, walk, findAll, lineOf, endLineOf } from '../../lib/analyze';
 
 export function detectPropDrilling(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
 
   walk(pf.ast, {
-    FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+    FunctionDeclaration(node: any) {
       if (node.id && /^[A-Z]/.test(node.id.name)) {
         analyzeComponent(node, node.id.name);
       }
     },
-    VariableDeclarator(node: TSESTree.VariableDeclarator) {
+    VariableDeclarator(node: any) {
       if (
         node.init &&
         (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression') &&
@@ -23,7 +22,7 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
     },
   });
 
-  function analyzeComponent(compNode: TSESTree.Node, compName: string) {
+  function analyzeComponent(compNode: any, compName: string) {
     const params = (compNode as any).params || [];
     const propsParam = params[0];
     if (!propsParam) return;
@@ -49,16 +48,16 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
       let spreadLine = compStart;
 
       walk(compNode, {
-        JSXSpreadAttribute(sa: TSESTree.JSXSpreadAttribute) {
+        JSXSpreadAttribute(sa: any) {
           if (sa.argument.type === 'Identifier' && sa.argument.name === spreadPropsName) {
             containsSpreadForwards = true;
             spreadLine = lineOf(sa);
           }
         },
         // Skip nested component walks to ensure it belongs to this component
-        FunctionDeclaration(n) { (n as any)._skip = true; },
-        FunctionExpression(n) { (n as any)._skip = true; },
-        ArrowFunctionExpression(n) { (n as any)._skip = true; },
+        FunctionDeclaration(_node, skip) { skip?.() },
+        FunctionExpression(_node, skip) { skip?.() },
+        ArrowFunctionExpression(_node, skip) { skip?.() },
       });
 
       if (containsSpreadForwards) {
@@ -80,7 +79,7 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
     }
 
     // 2. Identify props received but never used directly (only forwarded)
-    const propsInfo: Array<{ name: string; node: TSESTree.Node }> = [];
+    const propsInfo: Array<{ name: string; node: any }> = [];
     if (propsParam.type === 'ObjectPattern') {
       for (const prop of propsParam.properties) {
         if (prop.type === 'Property' && prop.value.type === 'Identifier') {
@@ -91,7 +90,7 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
 
     if (propsInfo.length > 0) {
       // For each destructured prop, count occurrences in the function body
-      const allIdentifiers = findAll(compNode, 'Identifier') as TSESTree.Identifier[];
+      const allIdentifiers = findAll(compNode, 'Identifier') as any[];
       const idCounts = new Map<string, number>();
       for (const id of allIdentifiers) {
         idCounts.set(id.name, (idCounts.get(id.name) ?? 0) + 1);
@@ -105,7 +104,7 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
         let jsxAttrCount = 0;
 
         walk(compNode, {
-          JSXAttribute(attr: TSESTree.JSXAttribute) {
+          JSXAttribute(attr: any) {
             if (attr.value && attr.value.type === 'JSXExpressionContainer') {
               const expr = attr.value.expression;
               if (expr.type === 'Identifier' && expr.name === prop.name) {
@@ -114,9 +113,9 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
             }
           },
           // Do not count nested functions
-          FunctionDeclaration(n) { (n as any)._skip = true; },
-          FunctionExpression(n) { (n as any)._skip = true; },
-          ArrowFunctionExpression(n) { (n as any)._skip = true; },
+          FunctionDeclaration(_node, skip) { skip?.() },
+          FunctionExpression(_node, skip) { skip?.() },
+          ArrowFunctionExpression(_node, skip) { skip?.() },
         });
 
         // If it is used exactly as many times as it's forwarded in JSX (plus the parameter binding),

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { useAuth } from './AuthContext'
-import { getSetting, setSetting } from './db'
+import { supabase } from './supabase'
 
 type Theme = 'light' | 'dark'
 
@@ -19,11 +19,11 @@ const ThemeContext = createContext<ThemeContextValue>({
 export const useTheme = () => useContext(ThemeContext)
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { profile } = useAuth()
+  const { profile, refreshProfile } = useAuth()
   const [theme, setThemeState] = useState<Theme>('light')
   const [initialized, setInitialized] = useState(false)
 
-  // Load theme from localStorage first, then Supabase if logged in
+  // Load theme from localStorage first
   useEffect(() => {
     const savedTheme = localStorage.getItem('refract-theme') as Theme | null
     if (savedTheme) {
@@ -38,24 +38,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setInitialized(true)
   }, [])
 
-  // Load theme from Supabase when profile is available
+  // Load theme from Supabase profile when it becomes available
   useEffect(() => {
-    if (!initialized || !profile?.id) return
+    if (!initialized || !profile) return
 
-    const loadTheme = async () => {
-      try {
-        const saved = await getSetting('theme', '')
-        if (saved === 'dark' || saved === 'light') {
-          setThemeState(saved)
-          document.documentElement.setAttribute('data-theme', saved)
-          localStorage.setItem('refract-theme', saved)
-        }
-      } catch (err) {
-        console.warn('[theme] failed to load theme from Supabase:', err)
-      }
+    const saved = profile.theme
+    if (saved === 'dark' || saved === 'light') {
+      setThemeState(saved)
+      document.documentElement.setAttribute('data-theme', saved)
+      localStorage.setItem('refract-theme', saved)
     }
-    loadTheme()
-  }, [profile?.id, initialized])
+  }, [profile?.theme, initialized])
 
   const setTheme = useCallback(async (newTheme: Theme) => {
     setThemeState(newTheme)
@@ -64,12 +57,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (profile?.id) {
       try {
-        await setSetting('theme', newTheme)
+        const { error } = await supabase
+          .from('users')
+          .update({ theme: newTheme })
+          .eq('id', profile.id)
+        if (error) throw error
+        await refreshProfile()
       } catch (err) {
         console.warn('[theme] failed to save theme to Supabase:', err)
       }
     }
-  }, [profile?.id])
+  }, [profile?.id, refreshProfile])
 
   const toggleTheme = useCallback(() => {
     setTheme(theme === 'light' ? 'dark' : 'light')

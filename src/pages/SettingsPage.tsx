@@ -1,449 +1,821 @@
 import React, { useEffect, useState } from 'react'
-import { Check, ChevronRight, Globe, Loader2, LogOut, ShieldAlert, User2, Sun, Moon } from 'lucide-react'
+import {
+  Check,
+  ChevronRight,
+  Globe,
+  Loader2,
+  LogOut,
+  ShieldAlert,
+  User2,
+  Sun,
+  Moon,
+  Save,
+  GitBranch,
+  Github,
+  Lock,
+  AlertCircle,
+  Trash2,
+  ExternalLink,
+  Plus,
+  RefreshCw,
+  X
+} from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
-import { openPricingUrl } from '../lib/billing'
+
 import { supabase, UserProfile } from '../lib/supabase'
+import { getAllProjects, getSetting, setSetting } from '../lib/db'
+import { useTranslation } from '../hooks/useTranslation'
 
-const C = {
-  bg: 'var(--canvas)',
-  surface: 'var(--surface-card)',
-  border: 'var(--hairline)',
-  text: 'var(--ink)',
-  muted: 'var(--ink-muted)',
-  subtle: 'var(--surface-strong)',
-  green: 'var(--semantic-success)',
-  red: 'var(--semantic-error)',
+interface SettingsPageProps {
+  activeTab: string
+  onTabChange: (tab: string) => void
 }
 
-type LanguageOption = {
-  label: string
-  value: UserProfile['language']
-}
-
-type PlanOption = {
-  name: UserProfile['plan']
-  title: string
-  price: string
-  description: string
-}
-
-const languageOptions: LanguageOption[] = [
-  { label: 'English', value: 'en' },
-  { label: 'Português', value: 'pt' },
-  { label: 'Español', value: 'es' },
-  { label: 'Français', value: 'fr' },
-  { label: 'Deutsch', value: 'de' },
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg, #f54e00, #ff9e00)',
+  'linear-gradient(135deg, #00b4db, #0083b0)',
+  'linear-gradient(135deg, #7f00ff, #e100ff)',
+  'linear-gradient(135deg, #11998e, #38ef7d)',
+  'linear-gradient(135deg, #f857a6, #ff5858)',
+  'linear-gradient(135deg, #1e3c72, #2a5298)',
 ]
 
-const planOptions: PlanOption[] = [
-  { name: 'free', title: 'Free', price: '$0', description: 'For trying Refract with the basics.' },
-  { name: 'pro', title: 'Pro', price: '$20', description: 'For solo builders who want more velocity.' },
-  { name: 'team', title: 'Team', price: '$49', description: 'For small teams reviewing code together.' },
-  { name: 'enterprise', title: 'Enterprise', price: '$1500', description: 'For larger orgs with premium support needs.' },
-]
+export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChange }) => {
+  const { profile, session, refreshProfile, signOut } = useAuth()
+  const { theme, setTheme } = useTheme()
+  const { t, lang } = useTranslation()
 
-const planRank: Record<UserProfile['plan'], number> = {
-  free: 0,
-  pro: 1,
-  team: 2,
-  enterprise: 3,
-}
-
-const toPlanLabel = (plan: UserProfile['plan']) => {
-  switch (plan) {
-    case 'free':
-      return 'Free'
-    case 'pro':
-      return 'Pro'
-    case 'team':
-      return 'Team'
-    case 'enterprise':
-      return 'Enterprise'
-  }
-}
-
-const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <p className="section-label" style={{ marginBottom: 12 }}>
-    {children}
-  </p>
-)
-
-const cardStyle: React.CSSProperties = {
-  background: C.surface,
-  border: `1px solid ${C.border}`,
-  borderRadius: '12px',
-  padding: 20,
-}
-
-export const SettingsPage: React.FC = () => {
-  const { profile, refreshProfile, signOut } = useAuth()
-  const { theme, toggleTheme } = useTheme()
+  // Profile Form States
   const [name, setName] = useState('')
-  const [selectedLanguage, setSelectedLanguage] = useState<UserProfile['language']>('en')
   const [isSavingName, setIsSavingName] = useState(false)
   const [nameSaved, setNameSaved] = useState(false)
+
+  // Language Change State
   const [isSavingLanguage, setIsSavingLanguage] = useState(false)
   const [languageSaved, setLanguageSaved] = useState(false)
-  const [isSigningOut, setIsSigningOut] = useState(false)
+
+  // Guidelines States
+  const [isLoadingGuidelines, setIsLoadingGuidelines] = useState(false)
+  const [guidelinesProjects, setGuidelinesProjects] = useState<any[]>([])
+  const [globalGuidelines, setGlobalGuidelines] = useState('')
+  const [isSavingGlobal, setIsSavingGlobal] = useState(false)
+
+  // Danger Zone States
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState('')
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     setName(profile?.name ?? '')
   }, [profile?.name])
 
-  useEffect(() => {
-    setSelectedLanguage(profile?.language ?? 'en')
-  }, [profile?.language])
-
+  // Clear save notifications after a delay
   useEffect(() => {
     if (!nameSaved) return
-
-    const timeoutId = window.setTimeout(() => setNameSaved(false), 2200)
-    return () => window.clearTimeout(timeoutId)
+    const timeout = setTimeout(() => setNameSaved(false), 2000)
+    return () => clearTimeout(timeout)
   }, [nameSaved])
 
   useEffect(() => {
     if (!languageSaved) return
-
-    const timeoutId = window.setTimeout(() => setLanguageSaved(false), 1800)
-    return () => window.clearTimeout(timeoutId)
+    const timeout = setTimeout(() => setLanguageSaved(false), 2000)
+    return () => clearTimeout(timeout)
   }, [languageSaved])
 
-  const handleSaveProfile = async () => {
-    if (!profile || isSavingName) return
+  // Load guidelines when Guidelines tab becomes active
+  useEffect(() => {
+    if (activeTab !== 'guidelines' || !profile?.id) return
 
-    const trimmedName = name.trim()
-    if (!trimmedName || trimmedName === profile.name) return
+    const loadGuidelines = async () => {
+      setIsLoadingGuidelines(true)
+      try {
+        const gText = await getSetting('global_guidelines', '')
+        setGlobalGuidelines(gText)
 
-    setIsSavingName(true)
-    setNameSaved(false)
-
-    try {
-      const { error } = await supabase
-        .from('users')
-        .update({ name: trimmedName })
-        .eq('id', profile.id)
-
-      if (error) throw error
-
-      await refreshProfile()
-      setName(trimmedName)
-      setNameSaved(true)
-    } catch (error) {
-      console.error('[settings] failed to save name:', error)
-    } finally {
-      setIsSavingName(false)
+        const allProjects = await getAllProjects(profile.id)
+        const projectItems = []
+        for (const proj of allProjects) {
+          const text = await getSetting(`guideline_${proj.id}`, '')
+          projectItems.push({
+            project: proj,
+            text,
+            isSaving: false,
+            savedAt: 'Synced',
+          })
+        }
+        setGuidelinesProjects(projectItems)
+      } catch (err) {
+        console.error('Error loading guidelines in settings:', err)
+      } finally {
+        setIsLoadingGuidelines(false)
+      }
     }
-  }
 
-  const handleLanguageChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
-    if (!profile || isSavingLanguage) return
-
-    const nextLanguage = event.target.value as UserProfile['language']
-    const previousLanguage = profile.language
-    if (nextLanguage === previousLanguage) return
-
-    setSelectedLanguage(nextLanguage)
-    setIsSavingLanguage(true)
-    setLanguageSaved(false)
-
-    try {
-      const { error } = await supabase
-        .from('users')
-        .update({ language: nextLanguage })
-        .eq('id', profile.id)
-
-      if (error) throw error
-
-      await refreshProfile()
-      setLanguageSaved(true)
-    } catch (error) {
-      setSelectedLanguage(previousLanguage)
-      console.error('[settings] failed to update language:', error)
-    } finally {
-      setIsSavingLanguage(false)
-    }
-  }
-
-  const handleUpgrade = () => {
-    if (openPricingUrl()) return
-    window.alert('Billing is not yet configured in this build. Set VITE_PRICING_URL to enable upgrades.')
-  }
-
-  const handleSignOut = async () => {
-    if (isSigningOut) return
-
-    setIsSigningOut(true)
-    try {
-      await signOut()
-    } finally {
-      setIsSigningOut(false)
-    }
-  }
+    loadGuidelines()
+  }, [activeTab, profile?.id])
 
   if (!profile) {
     return (
-      <div style={{ padding: '32px 36px', height: '100%', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--canvas)' }}>
-        <h1 className="page-title" style={{ marginBottom: 24 }}>Settings</h1>
-        <div style={{ ...cardStyle, maxWidth: 640 }}>
-          <p style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 6 }}>Profile unavailable</p>
-          <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.5 }}>
-            We could not load your account data right now. Refresh the session and try again.
-          </p>
+      <div className="p-10 min-h-screen bg-[var(--canvas)] flex items-center justify-center">
+        <div className="card max-w-md w-full p-6 text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-[var(--primary)]" />
+          <p className="text-sm text-[var(--ink-muted)]">{t('common.loading')}</p>
         </div>
       </div>
     )
   }
 
-  const isNameDirty = name.trim().length > 0 && name.trim() !== profile.name
-  const currentPlanRank = planRank[profile.plan]
+  const handleSaveName = async () => {
+    const trimmed = name.trim()
+    if (!trimmed || trimmed === profile.name || isSavingName) return
+
+    setIsSavingName(true)
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ name: trimmed })
+        .eq('id', profile.id)
+
+      if (error) throw error
+      await refreshProfile()
+      setNameSaved(true)
+    } catch (err) {
+      console.error('Failed to update name:', err)
+    } finally {
+      setIsSavingName(false)
+    }
+  }
+
+  const handleSelectAvatar = async (url: string) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ avatar_url: url })
+        .eq('id', profile.id)
+
+      if (error) throw error
+      await refreshProfile()
+    } catch (err) {
+      console.error('Failed to save avatar:', err)
+    }
+  }
+
+  const handleSyncGitHubAvatar = async () => {
+    const githubUsername = session?.user?.email?.split('@')[0]
+    const githubAvatarUrl = session?.user?.user_metadata?.avatar_url || 
+      (githubUsername ? `https://github.com/${githubUsername}.png` : null)
+
+    if (githubAvatarUrl) {
+      await handleSelectAvatar(githubAvatarUrl)
+    }
+  }
+
+  const handleLanguageChange = async (nextLang: UserProfile['language']) => {
+    if (nextLang === profile.language || isSavingLanguage) return
+
+    setIsSavingLanguage(true)
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ language: nextLang })
+        .eq('id', profile.id)
+
+      if (error) throw error
+      await refreshProfile()
+      setLanguageSaved(true)
+    } catch (err) {
+      console.error('Failed to update language:', err)
+    } finally {
+      setIsSavingLanguage(false)
+    }
+  }
+
+  const handleSaveProjectGuideline = async (projectId: string, text: string) => {
+    setGuidelinesProjects(prev =>
+      prev.map(p => (p.project.id === projectId ? { ...p, isSaving: true } : p))
+    )
+    try {
+      await setSetting(`guideline_${projectId}`, text)
+      setGuidelinesProjects(prev =>
+        prev.map(p =>
+          p.project.id === projectId
+            ? { ...p, isSaving: false, savedAt: 'Just now' }
+            : p
+        )
+      )
+    } catch (err) {
+      console.error('Failed to save project guideline:', err)
+      setGuidelinesProjects(prev =>
+        prev.map(p => (p.project.id === projectId ? { ...p, isSaving: false } : p))
+      )
+    }
+  }
+
+  const handleSaveGlobalGuidelines = async () => {
+    setIsSavingGlobal(true)
+    try {
+      await setSetting('global_guidelines', globalGuidelines)
+    } catch (err) {
+      console.error('Failed to save global guidelines:', err)
+    } finally {
+      setTimeout(() => setIsSavingGlobal(false), 500)
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    const confirmationWord = lang === 'pt' ? 'ELIMINAR' : 'DELETE'
+    if (deleteConfirmationInput !== confirmationWord || isDeletingAccount) return
+
+    setIsDeletingAccount(true)
+    setDeleteError(null)
+
+    try {
+      // 1. Delete user projects (RLS allows users to delete own projects, which cascades to health snapshots, decisions, activity)
+      const { error: projectsError } = await supabase
+        .from('projects')
+        .delete()
+        .eq('user_id', profile.id)
+      if (projectsError) throw projectsError
+
+      // 2. Delete user settings
+      const { error: settingsError } = await supabase
+        .from('settings')
+        .delete()
+        .eq('user_id', profile.id)
+      if (settingsError) throw settingsError
+
+      // 3. Delete user row in users table
+      const { error: userProfileError } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', profile.id)
+      if (userProfileError) throw userProfileError
+
+      // 4. Sign out
+      await signOut()
+      setShowDeleteModal(false)
+    } catch (err: any) {
+      console.error('Account deletion failed:', err)
+      setDeleteError(err.message || 'Failed to delete account. Please try again.')
+      setIsDeletingAccount(false)
+    }
+  }
+
+  const renderActiveTabContent = () => {
+    switch (activeTab) {
+      case 'profile':
+        return (
+          <div className="space-y-6 max-w-2xl page-enter">
+            {/* Header section card */}
+            <div className="card p-6 space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-xl bg-[var(--canvas-soft)] border border-[var(--hairline)] flex items-center justify-center text-[var(--primary)]">
+                  <User2 size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.profile.title')}</h3>
+                  <p className="text-sm text-[var(--ink-muted)]">{t('settings.profile.subtitle')}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--ink-muted)] uppercase tracking-wider mb-2">
+                    {t('settings.profile.name')}
+                  </label>
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      className="input flex-1"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      placeholder={t('settings.profile.namePlaceholder')}
+                    />
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleSaveName}
+                      disabled={isSavingName || !name.trim() || name.trim() === profile.name}
+                    >
+                      {isSavingName ? <Loader2 size={16} className="spin" /> : null}
+                      {isSavingName ? t('settings.profile.saving') : t('settings.profile.saveBtn')}
+                    </button>
+                  </div>
+                  {nameSaved && (
+                    <span className="text-xs text-[var(--semantic-success)] flex items-center gap-1 mt-1">
+                      <Check size={12} /> {t('settings.profile.saved')}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--ink-muted)] uppercase tracking-wider mb-2">
+                    {t('settings.profile.email')}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      className="input bg-[var(--canvas-soft)] opacity-60 cursor-not-allowed pr-10"
+                      value={profile.email}
+                      readOnly
+                      disabled
+                    />
+                    <Lock size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-muted)]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Avatar Selector card */}
+            <div className="card p-6 space-y-6">
+              <div>
+                <h3 className="text-base font-medium text-[var(--ink)]">{t('settings.profile.avatar')}</h3>
+                <p className="text-sm text-[var(--ink-muted)]">{t('settings.profile.avatarDesc')}</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Active Avatar Preview */}
+                <div className="flex flex-col items-center gap-2 pr-6 border-r border-[var(--hairline)]">
+                  {profile.avatar_url ? (
+                    profile.avatar_url.startsWith('linear-gradient') ? (
+                      <div style={{ background: profile.avatar_url }} className="h-16 w-16 rounded-full border border-[var(--hairline)] shadow-inner" />
+                    ) : (
+                      <img src={profile.avatar_url} alt="Profile" className="h-16 w-16 rounded-full object-cover border border-[var(--hairline)]" />
+                    )
+                  ) : (
+                    <div className="h-16 w-16 rounded-full bg-[var(--canvas-soft)] border border-[var(--hairline)] flex items-center justify-center text-lg font-bold text-[var(--ink)]">
+                      {profile.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-xs text-[var(--ink-muted)] font-medium">{t('settings.profile.avatarPreview')}</span>
+                </div>
+
+                {/* Preset Gradients */}
+                <div className="space-y-3 flex-1">
+                  <div className="flex flex-wrap gap-2.5">
+                    {AVATAR_GRADIENTS.map((grad, i) => {
+                      const isActive = profile.avatar_url === grad
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => handleSelectAvatar(grad)}
+                          style={{ background: grad }}
+                          className="h-10 w-10 rounded-full border border-[var(--hairline)] hover:scale-105 active:scale-95 transition-all duration-200 relative focus:outline-none"
+                        >
+                          {isActive && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-full">
+                              <Check size={16} className="text-white drop-shadow-md" />
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleSyncGitHubAvatar}
+                      style={{ gap: 6 }}
+                    >
+                      <Github size={14} />
+                      {t('settings.profile.githubAvatar')}
+                    </button>
+                    {profile.avatar_url && (
+                      <button
+                        className="btn btn-ghost btn-sm text-[var(--semantic-error)] hover:bg-[var(--semantic-error)]/10"
+                        onClick={() => handleSelectAvatar('')}
+                      >
+                        {t('settings.profile.avatarReset')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-[var(--ink-muted)] text-center">
+              {t('settings.profile.created')}: {new Date(profile.created_at).toLocaleDateString(lang === 'pt' ? 'pt-PT' : 'en-US', { dateStyle: 'long' })}
+            </p>
+          </div>
+        )
+
+      case 'preferences':
+        return (
+          <div className="space-y-6 max-w-2xl page-enter">
+            {/* Theme picker */}
+            <div className="card p-6 space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-xl bg-[var(--canvas-soft)] border border-[var(--hairline)] flex items-center justify-center text-[var(--primary)]">
+                  {theme === 'dark' ? <Moon size={24} /> : <Sun size={24} />}
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.preferences.themeTitle')}</h3>
+                  <p className="text-sm text-[var(--ink-muted)]">{t('settings.preferences.themeDesc')}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Light theme card */}
+                <div
+                  onClick={() => setTheme('light')}
+                  className={`cursor-pointer p-5 rounded-2xl border-2 transition-all duration-300 flex flex-col justify-between gap-6 hover:shadow-md select-none ${
+                    theme === 'light'
+                      ? 'border-[var(--primary)] bg-[var(--canvas-soft)] scale-[1.01] shadow-sm'
+                      : 'border-[var(--hairline)] bg-[var(--surface-card)] hover:border-[var(--hairline-strong)]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <Sun size={20} className={theme === 'light' ? 'text-[var(--primary)]' : 'text-[var(--ink-muted)]'} />
+                    {theme === 'light' ? (
+                      <div className="h-5 w-5 rounded-full bg-[var(--primary)] flex items-center justify-center text-white">
+                        <Check size={12} />
+                      </div>
+                    ) : (
+                      <div className="h-5 w-5 rounded-full border border-[var(--hairline-strong)]" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--ink)]">{t('settings.preferences.lightMode')}</p>
+                    <p className="text-xs text-[var(--ink-muted)]">{t('settings.preferences.lightDesc')}</p>
+                  </div>
+                </div>
+
+                {/* Dark theme card */}
+                <div
+                  onClick={() => setTheme('dark')}
+                  className={`cursor-pointer p-5 rounded-2xl border-2 transition-all duration-300 flex flex-col justify-between gap-6 hover:shadow-md select-none ${
+                    theme === 'dark'
+                      ? 'border-[var(--primary)] bg-[var(--canvas-soft)] scale-[1.01] shadow-sm'
+                      : 'border-[var(--hairline)] bg-[var(--surface-card)] hover:border-[var(--hairline-strong)]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <Moon size={20} className={theme === 'dark' ? 'text-[var(--primary)]' : 'text-[var(--ink-muted)]'} />
+                    {theme === 'dark' ? (
+                      <div className="h-5 w-5 rounded-full bg-[var(--primary)] flex items-center justify-center text-white">
+                        <Check size={12} />
+                      </div>
+                    ) : (
+                      <div className="h-5 w-5 rounded-full border border-[var(--hairline-strong)]" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--ink)]">{t('settings.preferences.darkMode')}</p>
+                    <p className="text-xs text-[var(--ink-muted)]">{t('settings.preferences.darkDesc')}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Language card */}
+            <div className="card p-6 space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-xl bg-[var(--canvas-soft)] border border-[var(--hairline)] flex items-center justify-center text-[var(--primary)]">
+                  <Globe size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.preferences.langTitle')}</h3>
+                  <p className="text-sm text-[var(--ink-muted)]">{t('settings.preferences.langDesc')}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="flex-1 max-w-sm">
+                  <select
+                    className="input"
+                    value={profile.language}
+                    onChange={e => handleLanguageChange(e.target.value as UserProfile['language'])}
+                    disabled={isSavingLanguage}
+                    style={{ appearance: 'none', cursor: 'pointer' }}
+                  >
+                    <option value="en">{t('settings.preferences.langOptions.en')}</option>
+                    <option value="pt">{t('settings.preferences.langOptions.pt')}</option>
+                    <option value="es">{t('settings.preferences.langOptions.es')}</option>
+                    <option value="fr">{t('settings.preferences.langOptions.fr')}</option>
+                    <option value="de">{t('settings.preferences.langOptions.de')}</option>
+                  </select>
+                </div>
+                <div className="text-xs text-[var(--ink-muted)]">
+                  {isSavingLanguage ? (
+                    <span className="flex items-center gap-1.5"><Loader2 size={12} className="spin" /> {t('settings.preferences.saving')}</span>
+                  ) : languageSaved ? (
+                    <span className="text-[var(--semantic-success)] flex items-center gap-1"><Check size={12} /> {t('settings.preferences.saved')}</span>
+                  ) : (
+                    t('settings.preferences.autoSave')
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'guidelines':
+        return (
+          <div className="space-y-6 max-w-3xl page-enter">
+            <div className="card p-6 space-y-2 bg-[var(--canvas-soft)] border border-[var(--hairline)]">
+              <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.guidelines.title')}</h3>
+              <p className="text-sm text-[var(--ink-muted)]">{t('settings.guidelines.subtitle')}</p>
+            </div>
+
+            {isLoadingGuidelines ? (
+              <div className="flex items-center gap-3 text-sm text-[var(--ink-muted)] p-6">
+                <Loader2 size={16} className="spin text-[var(--primary)]" />
+                {t('common.loading')}
+              </div>
+            ) : (
+              <>
+                {/* Global Guidelines */}
+                <div className="card p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-base font-semibold text-[var(--ink)]">{t('settings.guidelines.global')}</h4>
+                      <p className="text-xs text-[var(--ink-muted)]">{t('settings.guidelines.globalDesc')}</p>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleSaveGlobalGuidelines}
+                      disabled={isSavingGlobal}
+                    >
+                      {isSavingGlobal ? <Loader2 size={12} className="spin" /> : <Save size={12} />}
+                      {isSavingGlobal ? t('common.saving') : t('common.save')}
+                    </button>
+                  </div>
+                  <textarea
+                    className="textarea font-mono text-sm min-h-[140px]"
+                    placeholder={t('settings.guidelines.placeholder')}
+                    value={globalGuidelines}
+                    onChange={e => setGlobalGuidelines(e.target.value)}
+                  />
+                </div>
+
+                {/* Per project guidelines */}
+                <div className="space-y-3">
+                  <p className="section-label px-1">{t('settings.guidelines.perProject')}</p>
+
+                  {guidelinesProjects.length === 0 ? (
+                    <div className="p-8 border border-dashed border-[var(--hairline-strong)] rounded-2xl text-center text-sm text-[var(--ink-muted)] bg-[var(--surface-card)]">
+                      {t('settings.guidelines.noProjects')}
+                    </div>
+                  ) : (
+                    guidelinesProjects.map(gp => (
+                      <div key={gp.project.id} className="card p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold text-base text-[var(--ink)]">{gp.project.name}</span>
+                            <span className="badge badge-muted flex items-center gap-1.5 lowercase">
+                              <GitBranch size={10} /> {gp.project.branch}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-[var(--ink-muted)]">
+                              {gp.savedAt === 'Synced' ? '' : gp.savedAt}
+                            </span>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleSaveProjectGuideline(gp.project.id, gp.text)}
+                              disabled={gp.isSaving}
+                            >
+                              {gp.isSaving ? <Loader2 size={12} className="spin" /> : <Save size={12} />}
+                              {gp.isSaving ? t('common.saving') : t('common.save')}
+                            </button>
+                          </div>
+                        </div>
+
+                        <textarea
+                          className="textarea font-mono text-sm min-h-[100px]"
+                          placeholder={t('settings.guidelines.placeholder')}
+                          value={gp.text}
+                          onChange={e => {
+                            const val = e.target.value
+                            setGuidelinesProjects(prev =>
+                              prev.map(p => (p.project.id === gp.project.id ? { ...p, text: val, savedAt: 'Modified' } : p))
+                            )
+                          }}
+                        />
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )
+
+      case 'integrations':
+        const isGitHubConnected = Boolean(profile.github_installation_id)
+        return (
+          <div className="space-y-6 max-w-3xl page-enter">
+            {/* Main GitHub card */}
+            <div className="card p-6 space-y-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex gap-4">
+                  <div className="h-12 w-12 rounded-xl bg-black/5 dark:bg-white/5 border border-[var(--hairline)] flex items-center justify-center text-[var(--ink)]">
+                    <Github size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.integrations.githubTitle')}</h3>
+                    <p className="text-sm text-[var(--ink-muted)] max-w-md">{t('settings.integrations.githubDesc')}</p>
+                  </div>
+                </div>
+
+                <span className={`badge ${isGitHubConnected ? 'badge-success' : 'badge-muted'}`}>
+                  {isGitHubConnected ? t('settings.integrations.connected') : t('settings.integrations.notConnected')}
+                </span>
+              </div>
+
+              {isGitHubConnected && (
+                <div className="p-4 bg-[var(--canvas-soft)] border border-[var(--hairline)] rounded-xl space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[var(--ink-muted)]">{t('settings.integrations.connectedAs')}</span>
+                    <span className="font-semibold text-[var(--ink)] font-mono">{profile.github_installation_id}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[var(--ink-muted)]">{t('settings.integrations.repoSync')}</span>
+                    <span className="text-[var(--semantic-success)] font-medium">{t('settings.integrations.automatic')}</span>
+                  </div>
+                </div>
+              )}
+
+              <button
+                className={`btn ${isGitHubConnected ? 'btn-secondary' : 'btn-primary'}`}
+                onClick={() => {
+                  const url = `https://github.com/apps/refractdev/installations/new`
+                  window.location.href = url
+                }}
+                style={{ gap: 8 }}
+              >
+                <Github size={16} />
+                {isGitHubConnected ? t('settings.integrations.reconnectBtn') : t('settings.integrations.installBtn')}
+              </button>
+            </div>
+
+            {/* Other integrations grid */}
+            <div>
+              <p className="section-label mb-3 px-1">{t('settings.integrations.otherPlatforms')}</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  {
+                    id: 'gitlab',
+                    title: t('settings.integrations.gitlabTitle'),
+                    desc: t('settings.integrations.gitlabDesc'),
+                  },
+                  {
+                    id: 'slack',
+                    title: t('settings.integrations.slackTitle'),
+                    desc: t('settings.integrations.slackDesc'),
+                  },
+                  {
+                    id: 'discord',
+                    title: t('settings.integrations.discordTitle'),
+                    desc: t('settings.integrations.discordDesc'),
+                  },
+                ].map(item => (
+                  <div key={item.id} className="card p-5 flex flex-col justify-between min-h-[160px] opacity-75 hover:opacity-100 transition-opacity duration-300">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-semibold text-sm text-[var(--ink)]">{item.title}</span>
+                        <span className="badge badge-muted text-[10px] scale-90">{t('common.comingSoon')}</span>
+                      </div>
+                      <p className="text-xs text-[var(--ink-muted)] leading-relaxed">{item.desc}</p>
+                    </div>
+
+                    <button
+                      className="btn btn-secondary btn-sm mt-4 w-full"
+                      onClick={() => window.alert(t('common.comingSoon'))}
+                    >
+                      {t('common.comingSoon')}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'danger':
+        return (
+          <div className="space-y-6 max-w-2xl page-enter">
+            {/* Account danger actions card */}
+            <div className="card p-6 space-y-6 border border-[var(--semantic-error)]/30 bg-[var(--semantic-error)]/5">
+              <div className="flex items-start gap-4">
+                <div className="h-12 w-12 rounded-xl bg-[var(--semantic-error)]/10 flex items-center justify-center text-[var(--semantic-error)] shrink-0">
+                  <ShieldAlert size={24} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.danger.title')}</h3>
+                  <p className="text-sm text-[var(--ink-muted)]">{t('settings.danger.subtitle')}</p>
+                </div>
+              </div>
+
+              <hr className="divider border-[var(--semantic-error)]/10" />
+
+              <div className="flex flex-col sm:flex-row gap-4">
+                <button
+                  className="btn btn-secondary text-[var(--ink)] border-[var(--hairline-strong)] hover:bg-[var(--canvas-soft)]"
+                  onClick={signOut}
+                >
+                  <LogOut size={16} className="text-[var(--ink-muted)]" />
+                  {t('settings.danger.signOutBtn')}
+                </button>
+
+                <button
+                  className="btn bg-[var(--semantic-error)] text-white hover:opacity-90"
+                  onClick={() => {
+                    setDeleteConfirmationInput('')
+                    setDeleteError(null)
+                    setShowDeleteModal(true)
+                  }}
+                >
+                  <Trash2 size={16} />
+                  {t('settings.danger.deleteBtn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
+      default:
+        return null
+    }
+  }
+
+  const confirmationWord = lang === 'pt' ? 'ELIMINAR' : 'DELETE'
 
   return (
-    <div style={{ padding: '32px 36px', height: '100%', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--canvas)' }}>
-      <h1 className="page-title" style={{ marginBottom: 32, fontSize: '26px', fontWeight: 400, letterSpacing: '-0.325px' }}>Settings</h1>
+    <div className="p-10 h-full overflow-y-auto box-sizing bg-[var(--canvas)] select-none">
+      <div className="max-w-4xl mx-auto space-y-8 pb-16">
+        <div>
+          <span className="section-label text-[var(--primary)] font-semibold tracking-wider uppercase mb-1 block">
+            {t('settings.title')}
+          </span>
+          <h1 className="page-title text-3xl font-light text-[var(--ink)]">
+            {t(`settings.tabs.${activeTab}`)}
+          </h1>
+        </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 32, maxWidth: 760, paddingBottom: 48 }}>
-        <section>
-          <SectionLabel>Profile</SectionLabel>
-          <div style={cardStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '8px', background: C.subtle, display: 'grid', placeItems: 'center' }}>
-                <User2 size={16} color={C.text} />
-              </div>
-              <div>
-                <p style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 2 }}>Your profile</p>
-                <p style={{ fontSize: 14, color: C.muted }}>Update the visible account details stored in Supabase.</p>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gap: 16 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 14, color: C.text, marginBottom: 8 }}>Name</label>
-                <input
-                  className="input"
-                  value={name}
-                  onChange={event => setName(event.target.value)}
-                  placeholder="Your name"
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 14, color: C.text, marginBottom: 8 }}>Email</label>
-                <input
-                  className="input"
-                  value={profile.email}
-                  readOnly
-                  disabled
-                  style={{ opacity: 0.6, cursor: 'not-allowed' }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 18 }}>
-              <button
-                onClick={handleSaveProfile}
-                className="btn btn-primary btn-sm"
-                disabled={!isNameDirty || isSavingName}
-                style={{ minWidth: 126, justifyContent: 'center' }}
-              >
-                {isSavingName ? <Loader2 size={14} className="spin" /> : null}
-                {isSavingName ? 'Saving...' : 'Save changes'}
-              </button>
-              {nameSaved && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, color: C.green }}>
-                  <Check size={14} />
-                  Saved
-                </span>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <SectionLabel>Preferences</SectionLabel>
-          <div style={cardStyle}>
-            {/* Theme Toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '8px', background: C.subtle, display: 'grid', placeItems: 'center' }}>
-                {theme === 'dark' ? <Moon size={16} color={C.text} /> : <Sun size={16} color={C.text} />}
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 2 }}>Appearance</p>
-                <p style={{ fontSize: 14, color: C.muted }}>Choose your preferred theme.</p>
-              </div>
-              <button
-                onClick={toggleTheme}
-                className="btn btn-secondary btn-sm"
-                style={{ minWidth: 100, justifyContent: 'center', gap: 8 }}
-              >
-                {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
-                {theme === 'dark' ? 'Dark' : 'Light'}
-              </button>
-            </div>
-
-            {/* Language */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '8px', background: C.subtle, display: 'grid', placeItems: 'center' }}>
-                <Globe size={16} color={C.text} />
-              </div>
-              <div>
-                <p style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 2 }}>Language</p>
-                <p style={{ fontSize: 14, color: C.muted }}>Saved immediately after you change it.</p>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ flex: '1 1 280px', minWidth: 220 }}>
-                <select
-                  className="input"
-                  value={selectedLanguage}
-                  onChange={handleLanguageChange}
-                  disabled={isSavingLanguage}
-                  style={{ appearance: 'none', cursor: isSavingLanguage ? 'progress' : 'pointer' }}
-                >
-                  {languageOptions.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <span style={{ fontSize: 14, color: isSavingLanguage ? C.text : languageSaved ? C.green : C.muted }}>
-                {isSavingLanguage ? 'Saving...' : languageSaved ? 'Saved' : 'Auto-saves'}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <SectionLabel>Plan</SectionLabel>
-          <div style={{ ...cardStyle, paddingBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
-              <div>
-                <p style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 6 }}>Your current plan</p>
-                <p style={{ fontSize: 14, color: C.muted }}>Temporary upgrade action opens the public pricing page.</p>
-              </div>
-              <span className="badge badge-muted" style={{ fontSize: 11, padding: '4px 10px', textTransform: 'capitalize' }}>
-                {toPlanLabel(profile.plan)}
-              </span>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-              {planOptions.map(plan => {
-                const rank = planRank[plan.name]
-                const isCurrentPlan = plan.name === profile.plan
-                const canUpgrade = rank > currentPlanRank
-
-                return (
-                  <div
-                    key={plan.name}
-                    style={{
-                      background: isCurrentPlan ? 'rgba(245, 78, 0, 0.06)' : 'var(--canvas-soft)',
-                      border: `1px solid ${isCurrentPlan ? 'rgba(245, 78, 0, 0.25)' : 'var(--hairline)'}`,
-                      borderRadius: '12px',
-                      padding: 16,
-                      minHeight: 190,
-                      display: 'flex',
-                      flexDirection: 'column',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                      <p style={{ fontSize: 16, fontWeight: 600, color: C.text }}>{plan.title}</p>
-                      {isCurrentPlan ? (
-                        <span className="badge badge-success" style={{ fontSize: 10, padding: '2px 8px' }}>Current</span>
-                      ) : null}
-                    </div>
-
-                    <p style={{ fontSize: 22, fontWeight: 600, color: C.text, letterSpacing: '-0.03em', marginBottom: 8 }}>
-                      {plan.price}
-                      <span style={{ fontSize: 14, fontWeight: 500, color: C.muted, marginLeft: 4 }}>
-                        {plan.name === 'enterprise' ? '/mo+' : '/mo'}
-                      </span>
-                    </p>
-                    <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.5, marginBottom: 18 }}>
-                      {plan.description}
-                    </p>
-
-                    <div style={{ marginTop: 'auto' }}>
-                      {canUpgrade ? (
-                        <button
-                          className="btn btn-primary btn-sm"
-                          style={{ width: '100%', justifyContent: 'space-between' }}
-                          onClick={handleUpgrade}
-                        >
-                          <span>Upgrade</span>
-                          <ChevronRight size={14} />
-                        </button>
-                      ) : (
-                        <div
-                          style={{
-                            width: '100%',
-                            minHeight: 34,
-                            borderRadius: '8px',
-                            background: C.subtle,
-                            display: 'grid',
-                            placeItems: 'center',
-                            fontSize: 14,
-                            color: isCurrentPlan ? C.text : C.muted,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {isCurrentPlan ? 'Active plan' : 'Included below your tier'}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <SectionLabel>Danger Zone</SectionLabel>
-          <div style={{ ...cardStyle, borderColor: 'rgba(207, 45, 86, 0.2)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '8px', background: 'rgba(207, 45, 86, 0.08)', display: 'grid', placeItems: 'center' }}>
-                <ShieldAlert size={16} color={C.red} />
-              </div>
-              <div>
-                <p style={{ fontSize: 16, fontWeight: 600, color: C.text, marginBottom: 2 }}>Sensitive actions</p>
-                <p style={{ fontSize: 14, color: C.muted }}>These actions affect your session and account access.</p>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={handleSignOut}
-                disabled={isSigningOut}
-                style={{ minWidth: 120, justifyContent: 'center' }}
-              >
-                {isSigningOut ? <Loader2 size={14} className="spin" /> : <LogOut size={14} />}
-                {isSigningOut ? 'Signing out...' : 'Sign out'}
-              </button>
-
-              <button
-                onClick={() => window.alert('Contact support')}
-                style={{
-                  minWidth: 140,
-                  height: 34,
-                  padding: '0 14px',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(207, 45, 86, 0.25)',
-                  background: 'rgba(207, 45, 86, 0.08)',
-                  color: C.red,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Delete account
-              </button>
-            </div>
-          </div>
-        </section>
+        {renderActiveTabContent()}
       </div>
+
+      {/* Confirmation Delete Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="card max-w-md w-full p-6 relative border border-[var(--hairline)] shadow-2xl animate-[backdropIn_0.2s_ease-out]">
+            <button
+              onClick={() => !isDeletingAccount && setShowDeleteModal(false)}
+              className="absolute right-4 top-4 btn btn-ghost p-1.5 h-auto text-[var(--ink-muted)] hover:text-[var(--ink)]"
+            >
+              <X size={16} />
+            </button>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-[var(--semantic-error)]">
+                <ShieldAlert size={24} />
+                <h3 className="text-lg font-bold">{t('settings.danger.modalTitle')}</h3>
+              </div>
+
+              <p className="text-sm text-[var(--ink-muted)] leading-relaxed">
+                {t('settings.danger.modalDesc', { deleteWord: `"${confirmationWord}"` })}
+              </p>
+
+              <input
+                type="text"
+                className="input font-semibold tracking-wide uppercase text-center border-red-500/30"
+                placeholder={t('settings.danger.modalPlaceholder')}
+                value={deleteConfirmationInput}
+                onChange={e => setDeleteConfirmationInput(e.target.value.toUpperCase())}
+                disabled={isDeletingAccount}
+              />
+
+              {deleteError && (
+                <div className="p-3 bg-[var(--semantic-error)]/10 border border-[var(--semantic-error)]/25 rounded-lg flex gap-2 text-xs text-[var(--semantic-error)]">
+                  <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setShowDeleteModal(false)}
+                  disabled={isDeletingAccount}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  className="btn bg-[var(--semantic-error)] text-white btn-sm"
+                  onClick={handleDeleteAccount}
+                  disabled={deleteConfirmationInput !== confirmationWord || isDeletingAccount}
+                >
+                  {isDeletingAccount ? <Loader2 size={14} className="spin mr-1" /> : <Trash2 size={14} className="mr-1" />}
+                  {isDeletingAccount ? t('common.saving') : t('common.delete')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -62,6 +62,7 @@ export async function runImportCleanup(fileMap: Map<string, string>): Promise<Tr
       const after = applyReplacements(source, [{ start: importStart, end: importEnd, text: nextImportBlock }])
       const directCycles = [...(dependencyMap.get(filePath) ?? new Set())].filter((candidate) => dependencyMap.get(candidate)?.has(filePath))
 
+      console.log(`[importCleanup] file: ${filePath}, deletedImports:`, deletedImports, `after === source: ${after === source}`)
       if (after === source && directCycles.length === 0) continue
 
       proposals.push({

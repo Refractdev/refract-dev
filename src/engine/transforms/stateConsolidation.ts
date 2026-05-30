@@ -19,7 +19,7 @@ interface StateEntry {
   declaration: TSESTree.VariableDeclaration
 }
 
-export async function runStateConsolidation(fileMap: Map<string, string>): Promise<TransformProposal[]> {
+export async function runStateConsolidation(fileMap: Map<string, string>, guidelines?: string): Promise<TransformProposal[]> {
   const proposals: TransformProposal[] = []
 
   for (const [filePath, source] of fileMap.entries()) {
@@ -32,12 +32,14 @@ export async function runStateConsolidation(fileMap: Map<string, string>): Promi
         if (states.length < 4) continue
 
         const groups = buildGroups(states, component.node, source)
+        console.log(`[stateConsolidation] file: ${filePath}, states.length: ${states.length}, groups:`, groups.map(g => g.map(s => s.stateName)))
         for (const group of groups.filter((candidate) => candidate.length >= 3)) {
           const hookName = await suggestSemanticHookName({
             filePath,
             ownerName: component.name,
             currentName: `${component.name}State`,
             symbols: group.map((entry) => entry.stateName),
+            guidelines,
           })
           const hookPath = createHookPath(filePath, hookName)
           const hookImport = `import { ${hookName} } from '${toRelativeImport(filePath, hookPath)}'`
@@ -76,7 +78,8 @@ export async function runStateConsolidation(fileMap: Map<string, string>): Promi
           })
         }
       }
-    } catch {
+    } catch (err) {
+      console.error(`[runStateConsolidation] error:`, err)
       continue
     }
   }
@@ -87,7 +90,13 @@ export async function runStateConsolidation(fileMap: Map<string, string>): Promi
 function getComponents(nodes: TSESTree.ProgramStatement[]): ComponentCandidate[] {
   const components: ComponentCandidate[] = []
 
-  for (const node of nodes) {
+  for (let node of nodes) {
+    if (node.type === AST_NODE_TYPES.ExportDefaultDeclaration || node.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+      if (node.declaration) {
+        node = node.declaration as any
+      }
+    }
+
     if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id && /^[A-Z]/.test(node.id.name) && returnsJsx(node.body)) {
       components.push({ name: node.id.name, node })
       continue
@@ -203,16 +212,20 @@ function buildHookDestructuring(hookName: string, group: StateEntry[]): string {
 
 function buildHookFile(hookName: string, group: StateEntry[]): string {
   const stateShape = group.map((entry) => `  ${entry.stateName}: ${entry.typeName}`).join('\n')
+  
   const actionShape = group
     .map((entry) => `  | { type: '${entry.setterName}'; value: State['${entry.stateName}'] | ((current: State['${entry.stateName}']) => State['${entry.stateName}']) }`)
     .join('\n')
+  
   const reducerCases = group
-    .map((entry) => `    case '${entry.setterName}':\n      return { ...state, ${entry.stateName}: typeof action.value === 'function' ? action.value(state.${entry.stateName}) : action.value }`)
+    .map((entry) => `    case '${entry.setterName}': {\n      const nextVal = typeof action.value === 'function'\n        ? (action.value as (prev: State['${entry.stateName}']) => State['${entry.stateName}'])(state.${entry.stateName})\n        : action.value;\n      return { ...state, ${entry.stateName}: nextVal };\n    }`)
     .join('\n')
+  
   const setters = group
-    .map((entry) => `    ${entry.setterName}: (value: Action['value']) => dispatch({ type: '${entry.setterName}', value }),`)
+    .map((entry) => `    ${entry.setterName}: (value: State['${entry.stateName}'] | ((current: State['${entry.stateName}']) => State['${entry.stateName}'])) =>\n      dispatch({ type: '${entry.setterName}', value }),`)
     .join('\n')
-  const defaultState = group.map((entry) => `    ${entry.stateName}: seed.${entry.stateName} ?? undefined as State['${entry.stateName}']`).join(',\n')
+  
+  const defaultState = group.map((entry) => `    ${entry.stateName}: seed.${entry.stateName} ?? undefined as any`).join(',\n')
 
   return `import { useReducer } from 'react'\n\ntype State = {\n${stateShape}\n}\n\ntype Action =\n${actionShape}\n\nfunction reducer(state: State, action: Action): State {\n  switch (action.type) {\n${reducerCases}\n    default:\n      return state\n  }\n}\n\nexport function ${hookName}(seed: Partial<State> = {}) {\n  const [state, dispatch] = useReducer(reducer, {\n${defaultState}\n  })\n\n  return {\n    ...state,\n${setters}\n  }\n}\n`
 }
@@ -225,15 +238,15 @@ function inferStateType(call: TSESTree.CallExpression, source: string): string {
   const typeArg = call.typeArguments?.params[0]
   if (typeArg) return getNodeText(source, typeArg)
   const init = call.arguments[0]
-  if (!init) return 'any'
+  if (!init) return 'unknown'
   if (init.type === AST_NODE_TYPES.Literal) {
     if (typeof init.value === 'string') return 'string'
     if (typeof init.value === 'number') return 'number'
     if (typeof init.value === 'boolean') return 'boolean'
   }
-  if (init.type === AST_NODE_TYPES.ArrayExpression) return 'any[]'
-  if (init.type === AST_NODE_TYPES.ObjectExpression) return 'Record<string, any>'
-  return 'any'
+  if (init.type === AST_NODE_TYPES.ArrayExpression) return 'unknown[]'
+  if (init.type === AST_NODE_TYPES.ObjectExpression) return 'Record<string, unknown>'
+  return 'unknown'
 }
 
 function createHookPath(filePath: string, hookName: string): string {

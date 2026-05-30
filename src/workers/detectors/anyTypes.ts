@@ -1,47 +1,82 @@
 // src/workers/detectors/anyTypes.ts
-import { TSESTree } from '@typescript-eslint/typescript-estree';
-import { Issue, ParsedFile, walk, lineOf } from '../analysis.worker';
+import { Issue, ParsedFile, walk, lineOf } from '../../lib/analyze';
 
 export function detectAnyTypes(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
   const seen = new Set<number>();
 
-  function inferType(node: TSESTree.Node, name: string): string | null {
-    const parent = (node as any).parent;
-    if (!parent) return null;
-    if (parent.type === 'MemberExpression' && parent.property.type === 'Identifier') {
-      const prop = parent.property.name;
-      if (prop === 'length') return 'string | any[]';
-      if (prop === 'map') return 'Array<unknown>';
-      if (['id', 'name', 'email'].includes(prop)) {
-        return `${name.charAt(0).toUpperCase() + name.slice(1)}Interface`;
+  // Helper to get the nearest meaningful context by walking up the parent chain
+  function findNearestContext(node: any): { type: string; suggestion: string } | null {
+    let current = node.parent;
+    let grandparent = current?.parent;
+    
+    // Walk up until we find a meaningful context or reach the root
+    while (current && current.type) {
+      grandparent = current.parent;
+      
+      // Case 1: parent is TSTypeAnnotation and grandparent is VariableDeclarator with init
+      if (current.type === 'TSTypeAnnotation' && 
+          grandparent && 
+          grandparent.type === 'VariableDeclarator' && 
+          grandparent.init) {
+        
+        const init = grandparent.init;
+        // Infer from init value type
+        if (init.type === 'Literal') {
+          switch (typeof init.value) {
+            case 'string': return { type: 'TSTypeAnnotation', suggestion: 'string' };
+            case 'number': return { type: 'TSTypeAnnotation', suggestion: 'number' };
+            case 'boolean': return { type: 'TSTypeAnnotation', suggestion: 'boolean' };
+            default: return { type: 'TSTypeAnnotation', suggestion: 'unknown' };
+          }
+        } else if (init.type === 'ArrayExpression') {
+          return { type: 'TSTypeAnnotation', suggestion: 'unknown[]' };
+        } else if (init.type === 'ObjectExpression') {
+          return { type: 'TSTypeAnnotation', suggestion: 'Record<string, unknown>' };
+        } else if (init.type === 'CallExpression' && init.callee.type === 'Identifier') {
+          // Suggest ReturnType<typeof X> for call expressions
+          return { type: 'TSTypeAnnotation', suggestion: `ReturnType<typeof ${init.callee.name}>` };
+        }
       }
+      
+      // Case 2: parent is TSTypeAnnotation and grandparent is Identifier whose name starts with is or has
+      if (current.type === 'TSTypeAnnotation' && 
+          grandparent && 
+          grandparent.type === 'Identifier') {
+        const name = grandparent.name;
+        if (name.startsWith('is') || name.startsWith('has')) {
+          return { type: 'TSTypeAnnotation', suggestion: 'boolean' };
+        }
+      }
+      
+      // Case 3: parent is TSPropertySignature
+      if (current.type === 'TSPropertySignature') {
+        return { type: 'TSPropertySignature', suggestion: 'unknown' };
+      }
+      
+      // Continue walking up
+      current = current.parent;
     }
-    if (parent.type === 'CallExpression' && parent.callee.type === 'Identifier' && parent.callee.name === 'JSON.parse') {
-      return 'string';
-    }
-    if (parent.type === 'ReturnStatement') {
-      return 'Promise<unknown>';
-    }
-    return null;
+    
+    // Fallback
+    return { type: 'Fallback', suggestion: 'unknown' };
   }
 
   walk(pf.ast, {
-    TSAnyKeyword(node: TSESTree.TSAnyKeyword) {
+    TSAnyKeyword(node: any) {
       const line = lineOf(node);
       if (seen.has(line)) return;
       seen.add(line);
       const lineText = pf.lines[line - 1] ?? '';
 
       let inferred = null as string | null;
-      const parent = (node as any).parent;
-      if (parent && parent.type === 'TSTypeAnnotation' && parent.parent) {
-        if (parent.parent.type === 'Identifier') {
-          inferred = inferType(parent.parent, parent.parent.name);
-        }
+      const context = findNearestContext(node);
+      if (context) {
+        inferred = context.suggestion;
       }
 
-      const suggestion = inferred ? inferred : 'unknown';
+      // For TSAnyKeyword, never suggest any as the fix
+      const suggestion = inferred ?? 'unknown';
       const fixed = lineText.replace(/:\s*any\b/, `: ${suggestion}`);
       const unsafeCast = /as\s+any\b/.test(lineText);
 
@@ -58,7 +93,7 @@ export function detectAnyTypes(pf: ParsedFile): Issue[] {
         patch: { before: lineText, after: fixed },
       });
     },
-    TSAsExpression(node: TSESTree.TSAsExpression) {
+    TSAsExpression(node: any) {
       if (node.typeAnnotation.type === 'TSAnyKeyword') {
         const line = lineOf(node);
         const lineText = pf.lines[line - 1] ?? '';

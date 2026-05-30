@@ -74,12 +74,12 @@ const EFFORT_MAP: Record<string, 'low' | 'medium' | 'high'> = {
 // ─── Recursive AST walker ─────────────────────────────────────────────────────
 const SKIP_KEYS = new Set([
   'type', 'start', 'end', 'loc', 'range', 'errors', 'comments',
-  'leadingComments', 'trailingComments', 'innerComments', 'extra',
+  'leadingComments', 'trailingComments', 'innerComments', 'extra', 'parent',
 ]);
 
-function visitNode(node: any, visitor: { enter: (n: any) => void }) {
+function visitNode(node: any, visitor: { enter: (n: any) => void }, parent: any = null) {
   if (!node || typeof node !== 'object') return;
-  if ((node as any)._skip) return;
+  node.parent = parent;
   visitor.enter(node);
   for (const key of Object.keys(node)) {
     if (SKIP_KEYS.has(key)) continue;
@@ -87,31 +87,66 @@ function visitNode(node: any, visitor: { enter: (n: any) => void }) {
     if (Array.isArray(child)) {
       for (const item of child) {
         if (item && typeof item.type === 'string') {
-          visitNode(item, visitor);
+          visitNode(item, visitor, node);
         }
       }
     } else if (child && typeof child.type === 'string') {
-      visitNode(child, visitor);
+      visitNode(child, visitor, node);
     }
   }
 }
 
-export function walk(node: any, visitor: Record<string, (n: any) => void>) {
-  visitNode(node, {
-    enter(n: any) {
-      const fn = (visitor as any)[n.type];
-      if (fn) fn(n);
-    },
-  });
+export function walk(node: any, visitor: Record<string, (n: any, skip?: () => void) => void>) {
+  const skipped = new WeakSet<object>()
+
+  function visitNode(n: any) {
+    if (!n || typeof n !== 'object') return
+    if (skipped.has(n)) return
+
+    const fn = visitor[n.type]
+    if (fn) fn(n, () => skipped.add(n))
+
+    for (const key of Object.keys(n)) {
+      if (SKIP_KEYS.has(key)) continue
+      const child = n[key]
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item.type === 'string') visitNode(item)
+        }
+      } else if (child && typeof child.type === 'string') {
+        visitNode(child)
+      }
+    }
+  }
+
+  visitNode(node)
 }
 
 export function findAll(root: any, type: string): any[] {
+  const skipped = new WeakSet<object>()
   const results: any[] = [];
-  visitNode(root, {
-    enter(n: any) {
-      if (n.type === type) results.push(n);
-    },
-  });
+
+  function visitNode(n: any) {
+    if (!n || typeof n !== 'object') return;
+    if (skipped.has(n)) return;
+    if (n.type === type) results.push(n);
+
+    for (const key of Object.keys(n)) {
+      if (SKIP_KEYS.has(key)) continue;
+      const child = n[key];
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item.type === 'string') {
+            visitNode(item);
+          }
+        }
+      } else if (child && typeof child.type === 'string') {
+        visitNode(child);
+      }
+    }
+  }
+
+  visitNode(root);
   return results;
 }
 

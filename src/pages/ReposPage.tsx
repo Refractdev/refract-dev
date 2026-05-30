@@ -39,7 +39,7 @@ interface BranchModalState {
 
 export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => void }> = ({ onNavigate }) => {
   const { profile, installGitHubApp } = useAuth()
-  const { setFileMap } = useFiles()
+  const { setFileMap, setProjectId } = useFiles()
   const [repos, setRepos] = useState<GitHubRepo[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -157,7 +157,6 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
       const cloneResult = await cloneGitHubRepo(branchModal.repo.html_url, branchModal.selectedBranch)
       const files = Object.entries(cloneResult.files)
       const fileMap = new Map<string, string>(files)
-      setFileMap(fileMap)
 
       let project: Project
       try {
@@ -182,6 +181,8 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
         }
       }
 
+      setProjectId(project.id)
+      setFileMap(fileMap)
       setBranchModal(null)
       onNavigate('project-view', { projectId: project.id })
     } catch (err) {

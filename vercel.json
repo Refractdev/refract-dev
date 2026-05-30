@@ -8,6 +8,21 @@
   "functions": {
     "api/ai/*.ts": {
       "maxDuration": 30
+    },
+    "api/github/webhook.ts": {
+      "maxDuration": 10
+    },
+    "api/jobs/*.ts": {
+      "maxDuration": 120
+    },
+    "api/analysis/*.ts": {
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/jobs/process",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }
