@@ -135,6 +135,22 @@ export async function generateBriefing(
   return data.briefing
 }
 
+export async function explainCode(filePath: string, code: string, context?: { dependencies?: string[]; issues?: number; category?: string }): Promise<string> {
+  const accessToken = await getAccessToken()
+
+  const response = await fetch('/api/ai/explain-code', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ filePath, code, context }),
+  })
+
+  const data = await readResponse<{ explanation: string }>(response, 'Failed to explain code')
+  return data.explanation
+}
+
 export async function suggestRefactorName(input: RefactorNameRequest): Promise<string> {
   const accessToken = await getAccessToken()
 

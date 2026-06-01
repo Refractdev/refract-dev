@@ -10,9 +10,10 @@ import { Project, AnalysisResult, IssueCategory, AnalysisIssue } from '../../sha
 import { LogoMark } from '../../components/Logo'
 import type { Phase, Decision } from './types'
 import { getProject, saveDecision, getDecisionHistory, getSetting, persistProjectHealth } from '../../lib/db'
-import { explainIssue, generateBriefing, RateLimitError, cloneGitHubRepo, validateProposalSafety, createGitHubPullRequest } from '../../lib/api'
+import { explainIssue, explainCode, generateBriefing, RateLimitError, cloneGitHubRepo, validateProposalSafety, createGitHubPullRequest } from '../../lib/api'
 import { useFiles } from '../../context/FilesContext'
 import type { TransformProposal, SafetyResult } from '../../engine/types'
+import { generateReport } from '../../lib/report'
 import { CodeMap } from './CodeMap'
 import { useTranslation } from '../../hooks/useTranslation'
 
@@ -94,6 +95,36 @@ const SideBySideDiff: React.FC<{
   const { t } = useTranslation()
   const beforeLines = issue.lines.before || []
   const afterLines = issue.lines.after || []
+
+  const hasMeaningfulPatch = issue.patch?.after
+    && issue.patch.after.trim().length > 0
+    && !issue.patch.after.trim().startsWith('//')
+
+  if (!hasMeaningfulPatch) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', minHeight: 0 }}>
+        <div style={{ fontSize: 11, textTransform: 'uppercase', color: C.muted, letterSpacing: '0.08em', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, borderBottom: `1px solid ${C.border}`, paddingBottom: 10, marginBottom: 12 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.red }} />
+          {t('projectView.original')}
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          <div style={{ background: 'rgba(255, 91, 79, 0.02)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'Geist Mono, monospace', fontSize: 12, lineHeight: 1.6 }}>
+            {beforeLines.map((line, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'rgba(255, 91, 79, 0.05)', marginBottom: 2 }}>
+                <span style={{ color: 'rgba(255, 91, 79, 0.4)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
+                  {issue.lineStart + idx}
+                </span>
+                <pre style={{ margin: 0, color: '#ff8f8a', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', marginTop: 8, textAlign: 'center' }}>
+          {t('projectView.noDeterministicFix')}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', minHeight: 0 }}>
@@ -265,17 +296,34 @@ const SuccessState: React.FC<{
   summary: AnalysisResult['summary']
   decisions: Record<string, Decision>
   issues: AnalysisIssue[]
+  result: AnalysisResult | null
   project: Project | null
   onReviewAgain: () => void
   onCreatePR?: () => void
   creatingPR?: boolean
   prUrl?: string | null
-}> = ({ summary, decisions, issues, project, onReviewAgain, onCreatePR, creatingPR, prUrl }) => {
+}> = ({ summary, decisions, issues, result, project, onReviewAgain, onCreatePR, creatingPR, prUrl }) => {
   const { t, lang } = useTranslation()
 
   const acceptedIssues = issues.filter((issue) => decisions[issue.id] === 'accepted')
   const acceptedCount = acceptedIssues.length
   const rejected = Object.entries(decisions).filter(([, d]) => d === 'rejected').length
+
+  const handleExportReport = () => {
+    if (!result) return
+    const md = generateReport(result, {
+      projectName: project?.name,
+      branch: project?.branch ?? undefined,
+      language: lang as 'en' | 'pt',
+    })
+    const blob = new Blob([md], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `refract-report-${Date.now()}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const handleExportChangelog = () => {
     const lines = [
@@ -364,6 +412,11 @@ const SuccessState: React.FC<{
           <a href={prUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ gap: 8 }}>
             <GitBranch size={14} /> {lang === 'pt' ? 'Abrir PR no GitHub' : 'Open PR on GitHub'}
           </a>
+        )}
+        {result && (
+          <button onClick={handleExportReport} className="btn btn-ghost" style={{ gap: 8 }}>
+            <Download size={14} /> {t('projectView.exportReport')}
+          </button>
         )}
         {acceptedCount > 0 && (
           <button onClick={handleExportChangelog} className="btn btn-ghost" style={{ gap: 8 }}>
@@ -666,6 +719,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [issueExplanation, setIssueExplanation] = useState<string | null>(null)
   const [loadingExplanation, setLoadingExplanation] = useState(false)
+  const [fileExplanation, setFileExplanation] = useState<string | null>(null)
+  const [loadingFileExplanation, setLoadingFileExplanation] = useState(false)
   const [explanationCache, setExplanationCache] = useState<Record<string, string>>({})
   const [decisionHistory, setDecisionHistory] = useState<Record<string, { decision: string; created_at: string }>>({})
   const [currentSig, setCurrentSig] = useState<string | null>(null)
@@ -932,24 +987,60 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     return nextMap
   }
 
+  const batchApply = (baseMap: Map<string, string>, proposals: TransformProposal[]) => {
+    const nextMap = new Map(baseMap)
+    const byTarget = new Map<string, TransformProposal[]>()
+
+    for (const p of proposals) {
+      const target = p.movedTo ?? p.filePath
+      const group = byTarget.get(target) ?? []
+      group.push(p)
+      byTarget.set(target, group)
+    }
+
+    for (const [, group] of byTarget) {
+      if (group.length === 1) {
+        const p = group[0]
+        if (p.movedTo) nextMap.delete(p.filePath)
+        nextMap.set(p.movedTo ?? p.filePath, p.after)
+        for (const f of p.newFiles ?? []) nextMap.set(f.path, f.content)
+      } else {
+        const [winner, ...rest] = group
+        console.warn(
+          `batchApply: conflito em "${winner.movedTo ?? winner.filePath}" — ${rest.length} proposta(s) ignorada(s)`,
+          rest.map(p => p.id),
+        )
+        if (winner.movedTo) nextMap.delete(winner.filePath)
+        nextMap.set(winner.movedTo ?? winner.filePath, winner.after)
+        for (const f of winner.newFiles ?? []) nextMap.set(f.path, f.content)
+      }
+    }
+
+    return nextMap
+  }
+
   const handleAcceptAll = async () => {
     if (!project?.id) return
     const all: Record<string, Decision> = {}
     setLoadingRefactor(true)
     const promises = allIssues.map(async (i) => {
       all[i.id] = 'accepted'
-      const sig = await computeSignature(i)
-      return saveDecision(
-        project.id,
-        sig,
-        i.category,
-        i.file,
-        i.problem,
-        'accepted'
-      ).catch(err => console.error('Failed to save decision in batch accept', i.id, err))
+      try {
+        const sig = await computeSignature(i)
+        await saveDecision(
+          project.id,
+          sig,
+          i.category,
+          i.file,
+          i.problem,
+          'accepted'
+        )
+      } catch (err) {
+        console.error('Failed to save decision in batch accept', i.id, err)
+      }
     })
     setDecisions(all)
-    await Promise.all(promises)
+    void Promise.allSettled(promises)
     runRefactorEngine(true)
   }
 
@@ -957,6 +1048,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     if (!refactorWorkerRef.current) {
       setLoadingRefactor(false)
       setLoadingRefactorEngine(false)
+      setPhase('complete')
       return
     }
     setLoadingRefactorEngine(true)
@@ -974,27 +1066,23 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         const proposals = event.data.proposals as TransformProposal[]
 
         if (autoApplyAll) {
-          const nextMap = proposals.reduce(
-            (map, proposal) => applyProposalToMap(map, proposal),
-            new Map(fileMap),
-          )
+          const nextMap = batchApply(fileMap, proposals)
+
+          setFileMap(nextMap)
+          setRefactorProposals([])
+          setPhase('complete')
+          setLoadingRefactor(false)
+          setLoadingRefactorEngine(false)
 
           void (async () => {
-            for (const proposal of proposals) {
-              await persistRefactorDecision(proposal, 'accepted', 1)
+            try {
+              for (const proposal of proposals) {
+                await persistRefactorDecision(proposal, 'accepted', 1)
+              }
+            } catch (error) {
+              console.error('Failed to auto-apply refactor proposals', error)
             }
-            setFileMap(nextMap)
-            setRefactorProposals([])
-            setPhase('complete')
-            setLoadingRefactor(false)
-            setLoadingRefactorEngine(false)
-          })().catch((error) => {
-            console.error('Failed to auto-apply refactor proposals', error)
-            setRefactorProposals(proposals)
-            setPhase('refactoring')
-            setLoadingRefactor(false)
-            setLoadingRefactorEngine(false)
-          })
+          })()
           return
         }
 
@@ -1010,6 +1098,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         setRequestError(event.data.error ?? 'Failed to analyze refactoring proposals.')
         setLoadingRefactorEngine(false)
         setLoadingRefactor(false)
+        setPhase('complete')
       }
     }
 
@@ -1407,13 +1496,57 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
       {phase === 'reviewing' && currentIssue && (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 16, minHeight: 0, height: '100%' }}>
-          <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 16 }}>
-            <p style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: C.muted, marginBottom: 6 }}>{currentIssue.filePath}</p>
-            <h2 style={{ fontSize: 15, fontWeight: 500, margin: 0, color: 'var(--foreground)', letterSpacing: '-0.02em', lineHeight: 1.4 }}>
-              {currentIssue.problem}
-            </h2>
+          <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: C.muted, marginBottom: 6 }}>{currentIssue.filePath}</p>
+              <h2 style={{ fontSize: 15, fontWeight: 500, margin: 0, color: 'var(--foreground)', letterSpacing: '-0.02em', lineHeight: 1.4 }}>
+                {currentIssue.problem}
+              </h2>
+            </div>
+            <button
+              onClick={async () => {
+                setLoadingFileExplanation(true)
+                setFileExplanation(null)
+                try {
+                  const code = fileMap.get(currentIssue.filePath) ?? ''
+                  const deps = Object.entries(result?.dependencies ?? {})
+                    .filter(([k]) => k === currentIssue.filePath)
+                    .flatMap(([, v]) => v)
+                  const exp = await explainCode(currentIssue.filePath, code, {
+                    dependencies: deps.slice(0, 8),
+                    issues: result?.issues.filter(i => i.filePath === currentIssue.filePath).length,
+                    category: currentIssue.category,
+                  })
+                  setFileExplanation(exp)
+                } catch (err: any) {
+                  setFileExplanation(err.message ?? 'Failed to explain code')
+                } finally {
+                  setLoadingFileExplanation(false)
+                }
+              }}
+              className="btn btn-ghost btn-sm"
+              style={{ gap: 6, flexShrink: 0, marginLeft: 16 }}
+            >
+              {loadingFileExplanation ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Code2 size={12} />
+              )}
+              {loadingFileExplanation ? t('projectView.explaining') : t('projectView.explainCode')}
+            </button>
           </div>
           <SideBySideDiff issue={currentIssue} loading={loadingRefactor} />
+          {fileExplanation && (
+            <div style={{ background: 'var(--accent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', fontSize: 12, lineHeight: 1.7, color: 'var(--muted-foreground)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <FileText size={13} color={C.muted} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {lang === 'pt' ? 'Explicação do Código' : 'Code Explanation'}
+                </span>
+              </div>
+              <div style={{ whiteSpace: 'pre-wrap' }}>{fileExplanation}</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1422,6 +1555,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           summary={result.summary}
           decisions={decisions}
           issues={allIssues}
+          result={result}
           project={project}
           onReviewAgain={() => { setPhase('idle'); setResult(null); setDecisions({}); setPrUrl(null) }}
           onCreatePR={handleCreatePR}

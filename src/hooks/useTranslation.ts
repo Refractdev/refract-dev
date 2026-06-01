@@ -197,6 +197,11 @@ export const dictionary = {
       alreadyRejected: 'You rejected this before',
       briefingFallback: 'I analyzed {files} files and found {issues} issues.',
       reanalysing: 'Re-running analysis after refactor...',
+      noDeterministicFix: 'No deterministic fix available — see description for suggestions.',
+      explainCode: 'Explain this file',
+      explaining: 'Analyzing...',
+      exportReport: 'Export Full Report',
+      reportExported: 'Report downloaded',
     },
   },
   pt: {
@@ -394,6 +399,11 @@ export const dictionary = {
       alreadyRejected: 'Rejeitaste isto antes',
       briefingFallback: 'Analisei {files} ficheiros e encontrei {issues} problemas.',
       reanalysing: 'A voltar a analisar após a refatoração...',
+      noDeterministicFix: 'Nenhuma correção determinística disponível — vê a descrição para sugestões.',
+      explainCode: 'Explicar este ficheiro',
+      explaining: 'A analisar código...',
+      exportReport: 'Exportar Relatório Completo',
+      reportExported: 'Relatório descarregado',
     },
   },
   es: {

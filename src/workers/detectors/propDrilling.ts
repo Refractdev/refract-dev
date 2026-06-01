@@ -62,7 +62,6 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
 
       if (containsSpreadForwards) {
         const targetLineText = pf.lines[spreadLine - 1] ?? '';
-        const fixedText = `// Evita o spread total de props\n` + targetLineText.replace(`{...${spreadPropsName}}`, `/* passa as props necessárias explicitamente */`);
         issues.push({
           id: `prop-drilling-spread-${pf.filePath}-${spreadLine}`,
           file: pf.fileName,
@@ -72,8 +71,7 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
           impact: 'Medium',
           lineStart: spreadLine,
           lineEnd: spreadLine,
-          lines: { before: [targetLineText], after: [fixedText] },
-          patch: { before: targetLineText, after: fixedText },
+          lines: { before: [targetLineText], after: [] },
         });
       }
     }
@@ -123,7 +121,6 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
         if (jsxAttrCount > 0 && count === jsxAttrCount + 1) {
           const lineNum = lineOf(prop.node);
           const beforeLine = pf.lines[lineNum - 1] ?? '';
-          const fixedLine = `// Prop drill detetado: \`${prop.name}\` pode ser extraído para um Context ou Custom Hook\n` + beforeLine;
           issues.push({
             id: `prop-drilling-forwarded-${pf.filePath}-${lineNum}-${prop.name}`,
             file: pf.fileName,
@@ -133,8 +130,7 @@ export function detectPropDrilling(pf: ParsedFile): Issue[] {
             impact: 'Medium',
             lineStart: lineNum,
             lineEnd: lineNum,
-            lines: { before: [beforeLine], after: [fixedLine] },
-            patch: { before: beforeLine, after: fixedLine },
+            lines: { before: [beforeLine], after: [] },
           });
         }
       }

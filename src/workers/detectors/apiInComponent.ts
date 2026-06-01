@@ -106,10 +106,8 @@ export function detectApiInComponent(pf: ParsedFile): Issue[] {
     // Report for each domain group
     for (const [domain, calls] of groups.entries()) {
       const firstCall = calls[0];
-      const lastCall = calls[calls.length - 1];
 
-      // Retrieve full enclosing statement or useEffect block for patch.before
-      // Let's find the parent statement that contains the firstCall node
+      // Find the parent statement that contains the firstCall node
       let enclosingNode = firstCall.node as any;
       while (enclosingNode && enclosingNode.parent && enclosingNode.parent.type !== 'BlockStatement' && enclosingNode.parent.type !== 'Program') {
         enclosingNode = enclosingNode.parent;
@@ -127,19 +125,6 @@ export function detectApiInComponent(pf: ParsedFile): Issue[] {
       const startLine = lineOf(enclosingNode);
       const endLine = endLineOf(enclosingNode);
       const beforeLines = pf.lines.slice(startLine - 1, endLine);
-      const beforeText = beforeLines.join('\n');
-
-      const hookName = `use${compName}Data`;
-      const afterText = `// Extrai a chamada de API para um Custom Hook ou para um ficheiro de serviços (ex: src/services/api.ts)\n` +
-        `const ${hookName} = () => {\n` +
-        `  const [data, setData] = useState(null);\n` +
-        `  const [loading, setLoading] = useState(true);\n` +
-        `  useEffect(() => {\n` +
-        `    // Lógica para chamar a API do domínio: ${domain}\n` +
-        `    // fetch(${calls[0].url === 'dynamic-url' ? 'url' : `'${calls[0].url}'`})\n` +
-        `  }, []);\n` +
-        `  return { data, loading };\n` +
-        `};`;
 
       issues.push({
         id: `api-in-component-${pf.filePath}-${startLine}-${domain}`,
@@ -150,8 +135,7 @@ export function detectApiInComponent(pf: ParsedFile): Issue[] {
         impact: 'High',
         lineStart: startLine,
         lineEnd: endLine,
-        lines: { before: beforeLines, after: afterText.split('\n') },
-        patch: { before: beforeText, after: afterText },
+        lines: { before: beforeLines, after: [] },
       });
     }
   }
