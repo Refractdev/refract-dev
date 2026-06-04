@@ -67,8 +67,7 @@ export async function insertWebhookEvent(params: {
     .single()
 
   if (error) {
-    console.error('[webhooks] Failed to insert event:', error)
-    return null
+    throw new Error(`[webhooks] Failed to insert event: ${error.message ?? String(error)}`)
   }
   return data.id
 }

@@ -73,7 +73,7 @@ export function generateReport(result: AnalysisResult, options: ReportOptions = 
   const filled = Math.round((score / 100) * barLen)
   const empty = barLen - filled
   const barColor = score >= 80 ? '🟩' : score >= 50 ? '🟨' : '🟥'
-  lines.push(`\`${barColor.repeat(filled)}⬜`.repeat(empty)}\` **${score}/100**`)
+  lines.push(`\`${barColor.repeat(filled)}${'⬜'.repeat(empty)}\` **${score}/100**`)
   lines.push('')
 
   // Issues by category

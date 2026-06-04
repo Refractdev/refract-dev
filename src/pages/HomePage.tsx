@@ -78,40 +78,22 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
   const pluralSuffix = lang === 'de' ? (projects.length !== 1 ? 'e' : '') : (projects.length !== 1 ? 's' : '')
 
   return (
-    <div style={{ padding: '80px 40px', height: '100%', overflowY: 'auto', boxSizing: 'border-box', background: 'var(--canvas)' }}>
-      <style>{`
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: translateY(0) } }
-        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-      `}</style>
+    <div className="relative min-h-full h-full overflow-y-auto bg-[var(--canvas-soft)] px-6 py-12 md:px-16 md:py-20 select-none stagger-list box-sizing">
 
-       {/* Hero Section */}
-       <div style={{ marginBottom: 80, animation: 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both', maxWidth: 800 }}>
-         {error && (
-            <div style={{ 
-              background: 'rgba(207, 45, 86, 0.08)', 
-              border: '1px solid rgba(207, 45, 86, 0.18)', 
-              borderRadius: '8px', 
-              color: 'var(--semantic-error)', 
-              fontSize: '14px', 
-              lineHeight: 1.5, 
-              padding: '12px 16px', 
-              marginBottom: 16 
-            }}>
+      <div className="relative z-10 max-w-5xl mx-auto space-y-16">
+        {/* Hero Section */}
+        <div className="space-y-4 max-w-2xl">
+          {error && (
+            <div className="p-3.5 bg-[var(--semantic-error)]/10 border border-[var(--semantic-error)]/25 rounded-sm text-xs text-[var(--semantic-error)] leading-relaxed">
               {error}
             </div>
           )}
-          <h1 className="page-title" style={{ marginBottom: 16, fontSize: '36px', fontWeight: 400, letterSpacing: '-0.72px', lineHeight: 1.2 }}>
-            {greeting(t)}
+          
+          <h1 className="text-display-lg font-semibold tracking-tight text-[var(--ink)]">
+            {greeting(t)}.
           </h1>
-          <p style={{ 
-            fontSize: '16px', 
-            color: 'var(--body)', 
-            lineHeight: 1.5, 
-            letterSpacing: 0,
-            maxWidth: 600,
-            fontFamily: 'var(--font-sans)',
-            marginBottom: 32
-          }}>
+          
+          <p className="text-body-md text-[var(--body)] leading-relaxed font-sans max-w-xl">
             {!loading && hasProjects
               ? analysedCount > 0
                 ? t('home.stats.projectsInfo', {
@@ -129,98 +111,123 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
             }
           </p>
 
-         {/* ── Quick actions — only appears if no projects ─────────────────── */}
-         {!loading && !hasProjects && (
-           <div style={{ animation: 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both' }}>
-             <button onClick={() => setShowModal(true)} className="btn btn-primary">
-               <Plus size={16} /> {t('home.actions.addFirst')}
-             </button>
-           </div>
-         )}
-       </div>
-
-      {/* ── Recent Projects ───────────────────────────────────────────────────── */}
-      <div style={{ animation: 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both', marginBottom: 80 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-          <h2 style={{ fontSize: '26px', fontWeight: 400, letterSpacing: '-0.325px', color: 'var(--ink)', lineHeight: 1.25, fontFamily: 'var(--font-sans)' }}>{t('home.recentProjects')}</h2>
-          {hasProjects && (
-            <button
-              onClick={() => onNavigate('projects')}
-              className="btn btn-secondary"
-            >
-              {t('home.actions.viewAll')} <ArrowRight size={14} />
-            </button>
+          {/* Quick actions — only appears if no projects */}
+          {!loading && !hasProjects && (
+            <div className="pt-2">
+              <button 
+                onClick={() => setShowModal(true)} 
+                className="btn btn-primary shadow-sm rounded-pill px-6"
+              >
+                <Plus size={16} /> {t('home.actions.addFirst')}
+              </button>
+            </div>
           )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-          {loading ? (
-            [1, 2, 3].map(i => (
-              <div key={i} className="card" style={{ minHeight: 110, opacity: 0.5, padding: '16px 20px' }}>
-                <div style={{ width: '60%', height: 14, background: 'var(--canvas-soft)', borderRadius: '4px', marginBottom: 16 }} />
-                <div style={{ width: '40%', height: 12, background: 'var(--canvas-soft)', borderRadius: '4px' }} />
-              </div>
-            ))
-          ) : (
+        {/* Recent Projects Section */}
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-display-sm font-semibold tracking-tight text-[var(--ink)]">
+              {t('home.recentProjects')}.
+            </h2>
+            {hasProjects && (
+              <button
+                onClick={() => onNavigate('projects')}
+                className="btn btn-secondary text-xs rounded-pill px-4"
+              >
+                {t('home.actions.viewAll')} <ArrowRight size={12} className="ml-1" />
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {loading ? (
+              [1, 2, 3].map(i => (
+                <div key={i} className="card min-h-[120px] opacity-60 flex flex-col justify-between py-4 px-5">
+                  <div className="space-y-2">
+                    <div className="w-[60%] h-3.5 bg-[var(--canvas-soft-2)] rounded-xs shimmer" />
+                    <div className="w-[40%] h-3 bg-[var(--canvas-soft-2)] rounded-xs shimmer" />
+                  </div>
+                  <div className="w-[20%] h-2.5 bg-[var(--canvas-soft-2)] rounded-xs shimmer" />
+                </div>
+              ))
+            ) : (
               <>
                 {projects.slice(0, 5).map((p: Project, idx: number) => (
                   <div
                     key={p.id}
                     onClick={() => onNavigate('project-view', { projectId: p.id })}
-                    className="card"
-                    style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', minHeight: 110, padding: '16px 20px', animation: `fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${0.18 + idx * 0.04}s both` }}
-                 >
-                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
-                     <span style={{ fontSize: '16px', fontWeight: 600, letterSpacing: 0, color: 'var(--ink)' }}>{p.name}</span>
-                     <StatusBadge status={normalizeStatus(p.status)} t={t} />
-                   </div>
-                   <p style={{ fontSize: '14px', color: 'var(--ink-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 16, lineHeight: 1.5 }}>
-                     {p.repo || p.path || ''}
-                   </p>
-                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }}>
-                     <span className="badge badge-muted">
-                       <GitBranch size={11} /> {p.branch || 'main'}
-                     </span>
-                     <span style={{ fontSize: '13px', color: 'var(--ink-muted)' }}>
-                       {p.last_run 
-                         ? new Date(p.last_run).toLocaleDateString(lang === 'pt' ? 'pt-PT' : lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : lang === 'de' ? 'de-DE' : 'en-US') 
-                         : t('home.never')}
-                     </span>
-                   </div>
-                 </div>
+                    className="card group cursor-pointer flex flex-col justify-between min-h-[120px] py-4 px-5 bg-[var(--surface-card)]"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-[15px] font-semibold text-[var(--ink)] truncate max-w-[70%]">
+                          {p.name}
+                        </span>
+                        <StatusBadge status={normalizeStatus(p.status)} t={t} />
+                      </div>
+                      <p className="text-xs font-mono text-[var(--ink-muted)] truncate">
+                        {p.repo || p.path || ''}
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center justify-between pt-3 mt-4 border-t border-[var(--hairline-soft)]">
+                      <span className="badge badge-muted flex items-center gap-1.5 font-mono text-[10px] scale-90 origin-left">
+                        <GitBranch size={9} /> {p.branch || 'main'}
+                      </span>
+                      <span className="text-[11px] text-[var(--ink-muted-soft)]">
+                        {p.last_run 
+                          ? new Date(p.last_run).toLocaleDateString(lang === 'pt' ? 'pt-PT' : lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : lang === 'de' ? 'de-DE' : 'en-US') 
+                          : t('home.never')}
+                      </span>
+                    </div>
+                  </div>
                 ))}
               </>
-          )}
-        </div>
-      </div>
-
-      {/* ── What Refract does ─────────────── */}
-      {!loading && !hasProjects && (
-        <div style={{ animation: 'fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.16s both', marginTop: 40 }}>
-          <p className="section-label" style={{ marginBottom: 16 }}>
-            {t('home.whatRefractDoes')}
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-            <div className="card" style={{ padding: 24 }}>
-              <div style={{ marginBottom: 12, color: 'var(--ink)' }}><Zap size={18} /></div>
-              <p style={{ fontSize: '16px', fontWeight: 600, letterSpacing: 0, color: 'var(--ink)', marginBottom: 8, fontFamily: 'var(--font-sans)' }}>{t('home.features.astTitle')}</p>
-              <p style={{ fontSize: '14px', color: 'var(--ink-muted)', lineHeight: 1.5 }}>{t('home.features.astDesc')}</p>
-            </div>
-            
-            <div className="card" style={{ padding: 24 }}>
-              <div style={{ marginBottom: 12, color: 'var(--ink)' }}><Activity size={18} /></div>
-              <p style={{ fontSize: '16px', fontWeight: 600, letterSpacing: 0, color: 'var(--ink)', marginBottom: 8, fontFamily: 'var(--font-sans)' }}>{t('home.features.healthTitle')}</p>
-              <p style={{ fontSize: '14px', color: 'var(--ink-muted)', lineHeight: 1.5 }}>{t('home.features.healthDesc')}</p>
-            </div>
-
-            <div className="card" style={{ padding: 24 }}>
-              <div style={{ marginBottom: 12, color: 'var(--ink)' }}><Wrench size={18} /></div>
-              <p style={{ fontSize: '16px', fontWeight: 600, letterSpacing: 0, color: 'var(--ink)', marginBottom: 8, fontFamily: 'var(--font-sans)' }}>{t('home.features.applyTitle')}</p>
-              <p style={{ fontSize: '14px', color: 'var(--ink-muted)', lineHeight: 1.5 }}>{t('home.features.applyDesc')}</p>
-            </div>
+            )}
           </div>
         </div>
-      )}
+
+        {/* Feature Cards Grid (What Refract does) */}
+        {!loading && !hasProjects && (
+          <div className="space-y-6 pt-4">
+            <p className="section-label font-mono text-[10px] tracking-wider text-[var(--ink-muted-soft)] uppercase px-1">
+              {t('home.whatRefractDoes')}.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="card space-y-4">
+                <div className="p-2 w-10 h-10 rounded-sm bg-[var(--canvas-soft-2)] border border-[var(--hairline)] flex items-center justify-center text-[var(--ink)]">
+                  <Zap size={16} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-body-md-strong font-semibold text-[var(--ink)] tracking-tight">{t('home.features.astTitle')}</h3>
+                  <p className="text-xs text-[var(--ink-muted)] leading-relaxed">{t('home.features.astDesc')}</p>
+                </div>
+              </div>
+              
+              <div className="card space-y-4">
+                <div className="p-2 w-10 h-10 rounded-sm bg-[var(--canvas-soft-2)] border border-[var(--hairline)] flex items-center justify-center text-[var(--ink)]">
+                  <Activity size={16} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-body-md-strong font-semibold text-[var(--ink)] tracking-tight">{t('home.features.healthTitle')}</h3>
+                  <p className="text-xs text-[var(--ink-muted)] leading-relaxed">{t('home.features.healthDesc')}</p>
+                </div>
+              </div>
+
+              <div className="card space-y-4">
+                <div className="p-2 w-10 h-10 rounded-sm bg-[var(--canvas-soft-2)] border border-[var(--hairline)] flex items-center justify-center text-[var(--ink)]">
+                  <Wrench size={16} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-body-md-strong font-semibold text-[var(--ink)] tracking-tight">{t('home.features.applyTitle')}</h3>
+                  <p className="text-xs text-[var(--ink-muted)] leading-relaxed">{t('home.features.applyDesc')}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {showModal && (
         <NewProjectModal

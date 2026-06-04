@@ -1,7 +1,5 @@
-import Groq from 'groq-sdk'
+import { runAIChat } from '../_lib/ai'
 import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth'
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' })
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -30,8 +28,7 @@ Sem markdown. Sem explicações. Sem prefixos extra.`
   ].filter(Boolean).join('\n')
 
   try {
-    const msg = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+    const responseText = await runAIChat({
       max_tokens: 32,
       temperature: 0.2,
       messages: [
@@ -40,10 +37,11 @@ Sem markdown. Sem explicações. Sem prefixos extra.`
       ],
     })
 
-    const name = (msg.choices[0]?.message?.content ?? '').trim().replace(/[^a-zA-Z0-9]/g, '')
+    const name = responseText.trim().replace(/[^a-zA-Z0-9]/g, '')
     return res.status(200).json({ name: name || currentName || 'RefactorCandidate' })
   } catch (error: any) {
     console.error('Name suggestion error:', error)
     return res.status(500).json({ error: error.message || 'Failed to suggest name' })
   }
 }
+

@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getAdminSupabaseClient } from '../_lib/supabase'
 import { runAnalysis } from '../../src/lib/analyze'
-import { analyzeDrift, type SnapshotData } from '../../src/lib/drift'
+import { analyzeDrift, type SnapshotData } from '../_lib/drift'
 import { getAuthenticatedUser } from '../_lib/auth'
+import { throwIfDbError } from '../_lib/db'
 
 import { cloneRepo } from '../_lib/clone'
 
@@ -31,11 +32,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Verify user owns this project
     const supabase = getAdminSupabaseClient()
-    const { data: project } = await supabase
+    const { data: project, error: projectError } = await supabase
       .from('projects')
       .select('id')
       .eq('id', projectId)
       .single()
+    throwIfDbError(projectError, '[analysis/run] Failed to load project')
 
     if (!project) {
       return res.status(404).json({ error: 'Project not found' })
@@ -87,10 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
       .select('id')
       .single()
-
-    if (snapshotError) {
-      console.error('[analysis/run] Failed to save health_snapshot:', snapshotError)
-    }
+    throwIfDbError(snapshotError, '[analysis/run] Failed to save health_snapshot')
 
     // Save analysis result
     const { error: analysisError } = await supabase
@@ -108,19 +107,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         trigger: 'manual',
         duration_ms: 0,
       })
-
-    if (analysisError) {
-      console.error('[analysis/run] Failed to save analysis_result:', analysisError)
-    }
+    throwIfDbError(analysisError, '[analysis/run] Failed to save analysis_result')
 
     // Update project
-    await supabase
+    const { error: projectUpdateError } = await supabase
       .from('projects')
       .update({
         last_run: new Date().toISOString(),
         status: 'Refracted',
       })
       .eq('id', projectId)
+    throwIfDbError(projectUpdateError, '[analysis/run] Failed to update project status')
 
     // ── Run drift detection and save alerts ─────────────────────────────────
     try {
@@ -134,11 +131,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const snapshots = (recentResults ?? []) as SnapshotData[]
       if (snapshots.length >= 2) {
         const driftReport = analyzeDrift(snapshots, projectId)
-        const { data: existingAlerts } = await supabase
+        const { data: existingAlerts, error: existingAlertsError } = await supabase
           .from('drift_alerts')
           .select('alert_type, message')
           .eq('project_id', projectId)
           .is('acknowledged_at', null)
+        throwIfDbError(existingAlertsError, '[analysis/run] Failed to read drift alerts')
 
         const existingMessages = new Set(
           (existingAlerts ?? []).map((a: any) => `${a.alert_type}:${a.message}`),
@@ -147,7 +145,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         for (const alert of driftReport.alerts) {
           const key = `${alert.alert_type}:${alert.message}`
           if (existingMessages.has(key)) continue
-          await supabase
+          const { error: alertError } = await supabase
             .from('drift_alerts')
             .insert({
               project_id: projectId,
@@ -157,6 +155,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               message: alert.message,
               metadata: alert.metadata,
             })
+          throwIfDbError(alertError, '[analysis/run] Failed to save drift alert')
           existingMessages.add(key)
         }
       }

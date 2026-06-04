@@ -4,6 +4,7 @@ import { ProjectsPage } from './ProjectsPage';
 import { ReposPage } from './ReposPage';
 import { SettingsPage } from './SettingsPage';
 import { ProjectView } from './projectView/ProjectView';
+import { ProjectMonitor } from './ProjectMonitor';
 import { Sidebar } from '../components/Sidebar';
 import { useAuth } from '../lib/AuthContext';
 import { AuthPage } from './AuthPage';
@@ -42,7 +43,7 @@ class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { ha
   }
 }
 
-export type Page = 'home' | 'projects' | 'repos' | 'guidelines' | 'settings' | 'projectView';
+export type Page = 'home' | 'projects' | 'repos' | 'guidelines' | 'settings' | 'projectView' | 'project-monitor';
 
 function routeToPage(pathname: string): Page {
   switch (pathname) {
@@ -51,11 +52,13 @@ function routeToPage(pathname: string): Page {
     case '/repos':
       return 'repos';
     case '/guidelines':
-      return 'settings'; // guidelines redirects to settings
+      return 'settings';
     case '/settings':
       return 'settings';
     case '/project-view':
       return 'projectView';
+    case '/project-monitor':
+      return 'project-monitor';
     default:
       return 'home';
   }
@@ -68,11 +71,13 @@ function pageToRoute(page: Page): string {
     case 'repos':
       return '/repos';
     case 'guidelines':
-      return '/settings?tab=guidelines'; // redirect to settings guidelines
+      return '/settings?tab=guidelines';
     case 'settings':
       return '/settings';
     case 'projectView':
       return '/project-view';
+    case 'project-monitor':
+      return '/project-monitor';
     default:
       return '/';
   }
@@ -89,6 +94,8 @@ export const AppShell: React.FC = () => {
     return 'profile';
   });
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [monitorProjectId, setMonitorProjectId] = useState<string | null>(null);
+  const [monitorProjectData, setMonitorProjectData] = useState<any>(null);
 
   React.useEffect(() => {
     const syncPageFromLocation = () => {
@@ -145,7 +152,12 @@ export const AppShell: React.FC = () => {
 
   const handleNavigate = (page: Page | string, params?: any) => {
     if (params?.projectId) {
-      setActiveProjectId(params.projectId);
+      if (page === 'project-monitor') {
+        setMonitorProjectId(params.projectId);
+        if (params.projectData) setMonitorProjectData(params.projectData);
+      } else {
+        setActiveProjectId(params.projectId);
+      }
     }
     const normalizedPage = page === 'project-view' ? 'projectView' : (page as Page);
     
@@ -175,17 +187,22 @@ export const AppShell: React.FC = () => {
   const renderPage = () => {
     switch (activePage) {
       case 'home':        return <HomePage onNavigate={handleNavigate} />;
-      case 'projects':    return <ProjectsPage onOpenProject={(id) => handleNavigate('projectView', { projectId: id })} onNavigate={handleNavigate} />;
+      case 'projects':    return <ProjectsPage
+                              onOpenProject={(id) => handleNavigate('projectView', { projectId: id })}
+                              onOpenMonitor={(id, data) => handleNavigate('project-monitor', { projectId: id, projectData: data })}
+                              onNavigate={handleNavigate}
+                            />;
       case 'repos':       return <ReposPage onNavigate={handleNavigate} />;
       case 'settings':    return <SettingsPage activeTab={activeSettingsTab} onTabChange={handleSettingsTabChange} />;
       case 'projectView': return <ProjectView projectId={activeProjectId} onBack={() => handleNavigate('home')} />;
+      case 'project-monitor': return <ProjectMonitor projectId={monitorProjectId ?? ''} initialProjectData={monitorProjectData} onBack={() => handleNavigate('projects')} onOpenProject={(id) => handleNavigate('projectView', { projectId: id })} />;
       default:            return <HomePage onNavigate={handleNavigate} />;
     }
   };
 
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--canvas)' }}>
-      {activePage !== 'projectView' && (
+      {activePage !== 'projectView' && activePage !== 'project-monitor' && (
         <Sidebar 
           activePage={activePage} 
           onNavigate={(p) => handleNavigate(p)} 

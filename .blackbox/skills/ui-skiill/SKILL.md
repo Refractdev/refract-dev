@@ -1,4 +1,16 @@
 ---
+name: ui-skiill
+description: Brief description of what this Skill does and when to use it
+---
+
+# Ui Skiill
+
+## Instructions
+Provide clear, step-by-step guidance for Blackbox agents.
+
+## Examples
+Show concrete examples of using this Skill.
+---
 version: alpha
 name: Framer-design-analysis
 description: "A confident dark-canvas builder marketing site that treats the page like a working artboard — pure black surfaces, white display type set in GT Walsheim Medium with aggressive negative tracking, and a single confident blue (#0099ff) reserved for hyperlinks and selection states. The page rhythm is broken by oversized vibrant gradient atmosphere panels — magenta, violet, orange spotlights — that act as living showcase tiles, not decoration. Every CTA is a white pill on dark; every card is a translucent or charcoal surface; every section title pulls letter-spacing tight enough to feel like a poster."

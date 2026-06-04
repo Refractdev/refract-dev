@@ -9,6 +9,7 @@ import { detectStateExplosion } from './stateExplosion';
 import { detectApiInComponent } from './apiInComponent';
 import { detectMissingErrorBoundary } from './missingErrorBoundary';
 import { detectMemoryLeaks } from './memoryLeaks';
+import { detectUnusedImports } from './unusedImports';
 import { detectDuplicateLogic } from './duplicateLogic';
 
 export function runAllDetectors(pf: ParsedFile): Issue[] {
@@ -24,6 +25,7 @@ export function runAllDetectors(pf: ParsedFile): Issue[] {
     { name: 'apiInComponent', run: () => detectApiInComponent(pf) },
     { name: 'missingErrorBoundary', run: () => detectMissingErrorBoundary(pf) },
     { name: 'memoryLeaks', run: () => detectMemoryLeaks(pf) },
+    { name: 'unusedImports', run: () => detectUnusedImports(pf) },
   ];
 
   for (const detector of perFileDetectors) {

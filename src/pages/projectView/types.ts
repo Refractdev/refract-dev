@@ -20,6 +20,6 @@ export interface SnippetPair {
   after: DiffLine[]
 }
 
-export type Phase = 'idle' | 'analysing' | 'briefing' | 'reviewing' | 'refactoring' | 'complete'
+export type Phase = 'idle' | 'analysing' | 'briefing' | 'reviewing' | 'refactoring' | 'applying' | 'complete'
 
 export type Decision = 'accepted' | 'rejected'

@@ -23,7 +23,8 @@ export interface Issue {
     | 'missing-error-boundary'
     | 'memory-leak'
     | 'duplicate-logic'
-    | 'unsafe-cast';
+    | 'unsafe-cast'
+    | 'unused-import';
   problem: string;
   impact: 'High' | 'Medium' | 'Low';
   lineStart: number;
@@ -69,6 +70,7 @@ const EFFORT_MAP: Record<string, 'low' | 'medium' | 'high'> = {
   'memory-leak': 'high',
   'duplicate-logic': 'medium',
   'unsafe-cast': 'high',
+  'unused-import': 'low',
 };
 
 // ─── Recursive AST walker ─────────────────────────────────────────────────────
@@ -290,9 +292,11 @@ function enrichIssues(issues: Issue[], reverseMap: Map<string, number>): Issue[]
 }
 
 // ─── Detector orchestrator ─────────────────────────────────────────────────
-import { runAllDetectors, runCrossFileDetectors } from '../workers/detectors';
+import { runAllDetectors, runCrossFileDetectors } from '../workers/detectors'
+import { preComputePatches } from './patchComputer'
 
 export async function runAnalysis(
+
   files: Map<string, string>,
   onProgress?: (file: string) => void,
 ): Promise<AnalysisResult> {
@@ -391,16 +395,18 @@ export async function runAnalysis(
     }
   }
 
+  const withPatches = preComputePatches(enriched)
+
   return {
     projectPath: '',
     scannedFiles,
-    issues: enriched,
+    issues: withPatches,
     dependencies: depsObj,
     summary: {
-      total: enriched.length,
-      high: enriched.filter((i) => i.impact === 'High').length,
-      medium: enriched.filter((i) => i.impact === 'Medium').length,
-      low: enriched.filter((i) => i.impact === 'Low').length,
+      total: withPatches.length,
+      high: withPatches.filter((i) => i.impact === 'High').length,
+      medium: withPatches.filter((i) => i.impact === 'Medium').length,
+      low: withPatches.filter((i) => i.impact === 'Low').length,
     },
   };
 }

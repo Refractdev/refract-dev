@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getAdminSupabaseClient } from '../_lib/supabase'
 import { getAuthenticatedUser } from '../_lib/auth'
-import { analyzeDrift, type SnapshotData } from '../../src/lib/drift'
+import { analyzeDrift, type SnapshotData } from '../_lib/drift'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {

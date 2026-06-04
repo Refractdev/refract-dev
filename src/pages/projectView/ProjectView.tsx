@@ -96,36 +96,6 @@ const SideBySideDiff: React.FC<{
   const beforeLines = issue.lines.before || []
   const afterLines = issue.lines.after || []
 
-  const hasMeaningfulPatch = issue.patch?.after
-    && issue.patch.after.trim().length > 0
-    && !issue.patch.after.trim().startsWith('//')
-
-  if (!hasMeaningfulPatch) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', minHeight: 0 }}>
-        <div style={{ fontSize: 11, textTransform: 'uppercase', color: C.muted, letterSpacing: '0.08em', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, borderBottom: `1px solid ${C.border}`, paddingBottom: 10, marginBottom: 12 }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.red }} />
-          {t('projectView.original')}
-        </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-          <div style={{ background: 'rgba(255, 91, 79, 0.02)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'Geist Mono, monospace', fontSize: 12, lineHeight: 1.6 }}>
-            {beforeLines.map((line, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'rgba(255, 91, 79, 0.05)', marginBottom: 2 }}>
-                <span style={{ color: 'rgba(255, 91, 79, 0.4)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
-                  {issue.lineStart + idx}
-                </span>
-                <pre style={{ margin: 0, color: '#ff8f8a', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', marginTop: 8, textAlign: 'center' }}>
-          {t('projectView.noDeterministicFix')}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', minHeight: 0 }}>
       {/* Diff headers */}
@@ -139,12 +109,6 @@ const SideBySideDiff: React.FC<{
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.green }} />
             {t('projectView.refactored')}
           </div>
-          {loading && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, color: C.muted }}>
-              <Loader2 size={11} className="animate-spin" />
-              {t('projectView.diffLoading')}
-            </div>
-          )}
         </div>
       </div>
 
@@ -164,38 +128,14 @@ const SideBySideDiff: React.FC<{
 
         {/* Right Column (After) */}
         <div style={{ background: 'rgba(74, 222, 128, 0.02)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'Geist Mono, monospace', fontSize: 12, lineHeight: 1.6, position: 'relative' }}>
-          {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
-              <style>{`
-                @keyframes shimmerEffect {
-                  0% { background-position: -200px 0; }
-                  100% { background-position: 200px 0; }
-                }
-                .shimmer-line {
-                  height: 16px;
-                  border-radius: 4px;
-                  background: linear-gradient(90deg, var(--border) 25%, var(--accent) 50%, var(--border) 75%);
-                  background-size: 200px 100%;
-                  animation: shimmerEffect 1.5s infinite linear;
-                }
-              `}</style>
-              <div className="shimmer-line" style={{ width: '80%' }} />
-              <div className="shimmer-line" style={{ width: '95%' }} />
-              <div className="shimmer-line" style={{ width: '60%' }} />
-              <div className="shimmer-line" style={{ width: '85%' }} />
-              <div className="shimmer-line" style={{ width: '40%' }} />
-              <div className="shimmer-line" style={{ width: '70%' }} />
+          {afterLines.map((line, idx) => (
+            <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'rgba(74, 222, 128, 0.05)', marginBottom: 2 }}>
+              <span style={{ color: 'rgba(74, 222, 128, 0.4)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
+                {idx + 1}
+              </span>
+              <pre style={{ margin: 0, color: '#a3f3be', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
             </div>
-          ) : (
-            afterLines.map((line, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'rgba(74, 222, 128, 0.05)', marginBottom: 2 }}>
-                <span style={{ color: 'rgba(74, 222, 128, 0.4)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
-                  {idx + 1}
-                </span>
-                <pre style={{ margin: 0, color: '#a3f3be', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
-              </div>
-            ))
-          )}
+          ))}
         </div>
       </div>
     </div>
@@ -244,6 +184,40 @@ const AnalysingPanel: React.FC<{ files: any[]; scannedFiles: string[]; activeFil
       })}
     </div>
   </div>
+  )
+}
+
+// ─── Applying panel ───────────────────────────────────────────────────────────
+const ApplyingPanel: React.FC = () => {
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => setElapsed(s => s + 1), 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const messages = [
+    'Analysing refactoring opportunities...',
+    'Extracting sub-components...',
+    'Consolidating state...',
+    'Cleaning imports...',
+    'Centralising API calls...',
+    'Running safety checks...',
+    'Almost there...',
+  ]
+
+  const messageIndex = Math.min(Math.floor(elapsed / 4), messages.length - 1)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16 }}>
+      <Loader2 size={28} color={C.muted} className="animate-spin" />
+      <p style={{ fontSize: 14, color: C.muted, transition: 'all 0.3s ease' }}>
+        {messages[messageIndex]}
+      </p>
+      <p style={{ fontSize: 11, color: C.muted, opacity: 0.5 }}>
+        {elapsed}s
+      </p>
+    </div>
   )
 }
 
@@ -1019,28 +993,33 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     return nextMap
   }
 
-  const handleAcceptAll = async () => {
+  const handleAcceptAll = () => {
     if (!project?.id) return
+
+    // 1) Marcar localmente imediatamente
     const all: Record<string, Decision> = {}
-    setLoadingRefactor(true)
-    const promises = allIssues.map(async (i) => {
-      all[i.id] = 'accepted'
-      try {
-        const sig = await computeSignature(i)
-        await saveDecision(
-          project.id,
-          sig,
-          i.category,
-          i.file,
-          i.problem,
-          'accepted'
-        )
-      } catch (err) {
-        console.error('Failed to save decision in batch accept', i.id, err)
-      }
-    })
+    for (const issue of allIssues) {
+      all[issue.id] = 'accepted'
+    }
     setDecisions(all)
-    void Promise.allSettled(promises)
+
+    // 2) Feedback imediato ao utilizador
+    setPhase('applying')
+    setLoadingRefactor(true)
+
+    // 3) Persistência em background (não bloqueia UI)
+    void Promise.allSettled(
+      allIssues.map(async (i) => {
+        try {
+          const sig = await computeSignature(i)
+          await saveDecision(project.id, sig, i.category, i.file, i.problem, 'accepted')
+        } catch (err) {
+          console.error('Failed to save decision in batch accept', i.id, err)
+        }
+      })
+    )
+
+    // 4) Iniciar engine imediatamente
     runRefactorEngine(true)
   }
 
@@ -1059,7 +1038,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       serialized[key] = value
     }
 
+    let timeout: ReturnType<typeof setTimeout> | undefined
+
     refactorWorkerRef.current.onmessage = (event: MessageEvent) => {
+      clearTimeout(timeout)
       const { type } = event.data
 
       if (type === 'success') {
@@ -1103,6 +1085,13 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     }
 
     refactorWorkerRef.current.postMessage({ files: serialized, options: { maxProposals: 12, guidelines: combinedGuidelines } })
+
+    timeout = setTimeout(() => {
+      console.warn('[refactor] Worker timeout — forcing complete')
+      setPhase('complete')
+      setLoadingRefactor(false)
+      setLoadingRefactorEngine(false)
+    }, 30_000)
   }
 
   const applyProposalToFileMap = (proposal: TransformProposal) => {
@@ -1369,9 +1358,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
                   <div
                     key={issue.id}
                     onClick={() => {
-                      const visIdx = visibleIssues.findIndex(i => i.id === issue.id)
-                      if (visIdx !== -1) setCurrentIssueIdx(visIdx)
                       setSelectedCat(null)
+                      const idx = allIssues.findIndex(i => i.id === issue.id)
+                      if (idx !== -1) setCurrentIssueIdx(idx)
                     }}
                     style={{
                       background: isCurrent ? C.surfaceHover : C.surface,
@@ -1479,6 +1468,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
       {phase === 'briefing' && result && (
         <BriefingPanel text={briefingText} onStart={() => setPhase('reviewing')} />
+      )}
+
+      {phase === 'applying' && (
+        <ApplyingPanel />
       )}
 
       {phase === 'refactoring' && (

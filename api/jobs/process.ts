@@ -6,9 +6,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getAdminSupabaseClient } from '../_lib/supabase'
 import { getInstallationToken } from '../_lib/auth'
 import { githubRequest } from '../_lib/github'
+import { throwIfDbError } from '../_lib/db'
 import { runAnalysis } from '../../src/lib/analyze'
-import { analyzeDrift, type SnapshotData } from '../../src/lib/drift'
-
+import { analyzeDrift, type SnapshotData } from '../_lib/drift'
 import { cloneRepo } from '../_lib/clone'
 
 // ─── Sync helpers ─────────────────────────────────────────────────────────────
@@ -25,47 +25,35 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
   const errors: string[] = []
 
   try {
-    // Pick oldest pending event (lock by updating to processing)
-    const { data: events, error: fetchError } = await supabase
+    // Atomically claim up to five pending events so overlapping cron runs do not
+    // process the same event twice.
+    const { data: events, error: claimError } = await supabase
       .from('webhook_events')
-      .select('*')
+      .update({ status: 'processing' })
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(5)
+      .select('*')
 
-    if (fetchError) {
-      console.error('[jobs/process] Failed to fetch pending events:', fetchError)
-      return res.status(500).json({ error: fetchError.message })
-    }
+    throwIfDbError(claimError, '[jobs/process] Failed to claim pending events')
 
     if (!events || events.length === 0) {
       return res.status(200).json({ ok: true, processed: [], message: 'No pending events' })
     }
 
     for (const event of events) {
-      // Mark as processing
-      await supabase
-        .from('webhook_events')
-        .update({ status: 'processing' })
-        .eq('id', event.id)
-
       try {
-        const payload = event.payload
         const installationId = event.installation_id
         const repoUrl = event.repo_url
 
-        // Get installation token for GitHub API calls
         const token = await getInstallationToken(installationId)
 
-        // Clone repo
         const files = await cloneRepo(repoUrl, token, event.branch ?? undefined)
         console.log(`[jobs/process] Cloned ${Object.keys(files).length} files from ${repoUrl}`)
 
-        // Run analysis
         const fileMap = new Map(Object.entries(files))
         const result = await runAnalysis(fileMap)
 
-        // Compute category breakdown
         const categoryCounts: Record<string, number> = {}
         const fileCounts: Record<string, number> = {}
         for (const issue of result.issues) {
@@ -73,9 +61,8 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
           fileCounts[issue.filePath] = (fileCounts[issue.filePath] ?? 0) + 1
         }
 
-        // Save health snapshot
         const score = computeScore(result.summary)
-        const { data: snapshot } = await supabase
+        const { data: snapshot, error: snapshotError } = await supabase
           .from('health_snapshots')
           .insert({
             project_id: event.project_id,
@@ -88,9 +75,9 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
           })
           .select('id')
           .single()
+        throwIfDbError(snapshotError, '[jobs/process] Failed to save health snapshot')
 
-        // Save analysis result
-        await supabase
+        const { error: analysisError } = await supabase
           .from('analysis_results')
           .insert({
             project_id: event.project_id,
@@ -108,28 +95,29 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
             trigger: event.event_type === 'pull_request' ? 'pull_request' : 'push',
             duration_ms: 0,
           })
+        throwIfDbError(analysisError, '[jobs/process] Failed to save analysis result')
 
-        // Update project
-        await supabase
+        const { error: projectUpdateError } = await supabase
           .from('projects')
           .update({
             last_run: new Date().toISOString(),
             status: 'Refracted',
           })
           .eq('id', event.project_id)
+        throwIfDbError(projectUpdateError, '[jobs/process] Failed to update project status')
 
-        // ── Post PR comment if this was a pull_request event ──────────────
         if (event.event_type === 'pull_request' && event.pr_number && event.project_id) {
-          const { data: project } = await supabase
+          const { data: project, error: projectError } = await supabase
             .from('projects')
             .select('repo')
             .eq('id', event.project_id)
             .single()
+          throwIfDbError(projectError, '[jobs/process] Failed to load project repo')
 
           if (project?.repo) {
             const repoPath = project.repo.replace('https://github.com/', '')
             const summary = result.summary
-            const scoreChange = '—' // no previous score to compare in this version
+            const scoreChange = '—'
 
             const body = [
               `## 🔍 Refract Analysis — PR #${event.pr_number}`,
@@ -158,24 +146,25 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
           }
         }
 
-        // ── Run drift detection and save alerts ──────────────────────────
         if (event.project_id) {
           try {
-            const { data: recentResults } = await supabase
+            const { data: recentResults, error: recentResultsError } = await supabase
               .from('analysis_results')
               .select('*')
               .eq('project_id', event.project_id)
               .order('created_at', { ascending: false })
               .limit(20)
+            throwIfDbError(recentResultsError, '[jobs/process] Failed to load recent analysis results')
 
             const snapshots = (recentResults ?? []) as SnapshotData[]
             if (snapshots.length >= 2) {
               const driftReport = analyzeDrift(snapshots, event.project_id)
-              const { data: existingAlerts } = await supabase
+              const { data: existingAlerts, error: existingAlertsError } = await supabase
                 .from('drift_alerts')
                 .select('alert_type, message')
                 .eq('project_id', event.project_id)
                 .is('acknowledged_at', null)
+              throwIfDbError(existingAlertsError, '[jobs/process] Failed to load existing drift alerts')
 
               const existingMessages = new Set(
                 (existingAlerts ?? []).map((a: any) => `${a.alert_type}:${a.message}`),
@@ -184,7 +173,8 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
               for (const alert of driftReport.alerts) {
                 const key = `${alert.alert_type}:${alert.message}`
                 if (existingMessages.has(key)) continue
-                await supabase
+
+                const { error: alertError } = await supabase
                   .from('drift_alerts')
                   .insert({
                     project_id: event.project_id,
@@ -194,8 +184,10 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
                     message: alert.message,
                     metadata: alert.metadata,
                   })
+                throwIfDbError(alertError, '[jobs/process] Failed to save drift alert')
                 existingMessages.add(key)
               }
+
               console.log(`[jobs/process] Drift alerts saved for project ${event.project_id}`)
             }
           } catch (driftErr) {
@@ -203,11 +195,11 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
           }
         }
 
-        // Mark event as completed
-        await supabase
+        const { error: completeError } = await supabase
           .from('webhook_events')
           .update({ status: 'completed', processed_at: new Date().toISOString() })
           .eq('id', event.id)
+        throwIfDbError(completeError, '[jobs/process] Failed to mark webhook event completed')
 
         processed.push(event.id)
         console.log(`[jobs/process] Event ${event.id} completed`)
@@ -215,7 +207,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
         console.error(`[jobs/process] Event ${event.id} failed:`, eventErr)
         errors.push(`${event.id}: ${eventErr.message ?? eventErr}`)
 
-        await supabase
+        const { error: failError } = await supabase
           .from('webhook_events')
           .update({
             status: 'failed',
@@ -223,6 +215,9 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
             processed_at: new Date().toISOString(),
           })
           .eq('id', event.id)
+        if (failError) {
+          console.error('[jobs/process] Failed to mark webhook event as failed:', failError)
+        }
       }
     }
 

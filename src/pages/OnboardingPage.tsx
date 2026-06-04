@@ -138,7 +138,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
               width: 40,
               height: 4,
               borderRadius: 2,
-              background: i <= currentStep ? 'var(--primary)' : 'var(--surface-2)',
+              background: i <= currentStep ? 'var(--primary)' : 'var(--canvas-soft-2)',
               transition: 'background 0.3s ease'
             }}
           />
@@ -151,7 +151,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
         style={{ 
           width: '100%', 
           maxWidth: 480,
-          background: 'var(--surface-1)',
+          background: 'var(--surface-card)',
           borderRadius: 'var(--radius)',
           padding: '40px',
           boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
@@ -166,7 +166,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
             width: 48, 
             height: 48, 
             borderRadius: '9999px', 
-            background: 'var(--surface-2)',
+            background: 'var(--canvas-soft-2)',
             marginBottom: 24,
             boxShadow: '0 2px 10px rgba(0,0,0,0.2)'
           }}>
@@ -197,7 +197,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
                   justifyContent: 'space-between',
                   width: '100%',
                   padding: '16px 20px',
-                  background: isSelected ? 'var(--surface-2)' : 'var(--canvas)',
+                  background: isSelected ? 'var(--canvas-soft-2)' : 'var(--canvas)',
                   border: isSelected ? '1px solid var(--ring)' : '1px solid var(--hairline)',
                   borderRadius: '10px',
                   color: 'var(--ink)',

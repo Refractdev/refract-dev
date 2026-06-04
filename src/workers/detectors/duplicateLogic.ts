@@ -42,26 +42,33 @@ export function detectDuplicateLogic(parsedCache: Map<string, ParsedFile>): Issu
       comparisons++;
       const f2 = candidates[j];
 
-      // Skip functions in the same file
-      if (f1.filePath === f2.filePath) continue;
-
       const sim = getSimilarity(f1.signature, f2.signature);
-      if (sim >= 0.8) {
-        const lineText = f1.code;
-        const suggestText = `// Lógica duplicada detetada com ${f2.fileName}. Move para src/utils/shared.ts\n` +
-          `// export function ${f1.name || 'sharedHelper'}() { ... }`;
+      const threshold = f1.filePath === f2.filePath ? 0.75 : 0.8;
+      if (sim >= threshold) {
+        const isSameFile = f1.filePath === f2.filePath;
+
+        const suggestText = isSameFile
+          ? `// Lógica duplicada detetada no mesmo ficheiro.\n` +
+            `// As funções \`${f1.name || 'anónima'}\` e \`${f2.name || 'anónima'}\` têm estrutura idêntica.\n` +
+            `// Extrai para uma função partilhada no mesmo ficheiro ou em src/utils/shared.ts\n` +
+            `// function ${f1.name || 'sharedHelper'}(...args) { ... }`
+          : `// Lógica duplicada detetada com ${f2.fileName}.\n` +
+            `// Move para src/utils/shared.ts\n` +
+            `// export function ${f1.name || 'sharedHelper'}() { ... }`;
 
         issues.push({
-          id: `duplicate-logic-${f1.filePath}-${f1.line}-${f2.fileName}-${f2.line}`,
+          id: `duplicate-logic-${f1.filePath}-${f1.line}-${isSameFile ? 'same' : f2.fileName}-${f2.line}`,
           file: f1.fileName,
           filePath: f1.filePath,
           category: 'duplicate-logic',
-          problem: `Lógica duplicada detetada: a função \`${f1.name || 'anónima'}\` é 80%+ similar à função \`${f2.name || 'anónima'}\` em \`${f2.fileName}\`. Move para um utilitário partilhado`,
+          problem: isSameFile
+            ? `Lógica duplicada no mesmo ficheiro: \`${f1.name || 'anónima'}\` e \`${f2.name || 'anónima'}\` são ${Math.round(sim * 100)}% similares. Extrai para uma função partilhada`
+            : `Lógica duplicada com \`${f2.fileName}\`: \`${f1.name || 'anónima'}\` é ${Math.round(sim * 100)}% similar a \`${f2.name || 'anónima'}\`. Move para um utilitário partilhado`,
           impact: 'Medium',
           lineStart: f1.line,
           lineEnd: f1.endLine,
-          lines: { before: lineText.split('\n'), after: [suggestText] },
-          patch: { before: lineText, after: suggestText },
+          lines: { before: f1.code.split('\n'), after: [suggestText] },
+          patch: { before: f1.code, after: suggestText },
         });
       }
     }

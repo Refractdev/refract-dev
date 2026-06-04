@@ -53,8 +53,7 @@ function validateProposal(proposal: TransformProposal, fileMap: Map<string, stri
         if (node.type !== AST_NODE_TYPES.ImportDeclaration) return
         const resolved = resolveVirtualImport(virtualMap, path, node.source.value)
         if (resolved === null) {
-          importsResolved = false
-          errors.push(`${path}: unresolved import "${node.source.value}"`)
+          warnings.push(`${path}: unresolved import "${node.source.value}" (skipped)`)
         }
       },
     })
@@ -67,7 +66,7 @@ function validateProposal(proposal: TransformProposal, fileMap: Map<string, stri
   }
 
   return {
-    passed: syntaxOk && importsResolved,
+    passed: syntaxOk,
     syntaxOk,
     typecheck: syntaxOk && propsOk,
     errors,

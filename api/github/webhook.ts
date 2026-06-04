@@ -29,11 +29,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Missing x-github-event header' })
   }
 
-  // Acknowledge immediately to avoid GitHub timeout (10s)
-  res.status(202).json({ ok: true })
-
-  // Process event asynchronously (fire-and-forget)
-  routeWebhookEvent(eventType, req.body).catch((err) => {
+  try {
+    await routeWebhookEvent(eventType, req.body)
+    return res.status(200).json({ ok: true })
+  } catch (err) {
     console.error('[webhook] Error processing event:', eventType, err)
-  })
+    return res.status(500).json({ error: 'Failed to process webhook event' })
+  }
 }

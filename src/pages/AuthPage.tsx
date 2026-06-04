@@ -75,79 +75,30 @@ export const AuthPage: React.FC = () => {
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        width: '100%',
-        background: 'var(--background)',
-        padding: '20px',
-      }}
-    >
-      <div
-        className="card"
-        style={{
-          width: '100%',
-          maxWidth: 400,
-          padding: '48px 32px',
-          boxShadow: 'var(--shadow-border)',
-        }}
-      >
+    <div className="flex items-center justify-center min-h-screen w-full bg-[var(--canvas-soft)] p-6 select-none relative">
+      <div className="card relative z-10 w-full max-w-[400px] bg-[var(--surface-card)] border border-[var(--hairline)] p-8 md:p-10 shadow-[var(--shadow-level-5)] rounded-md space-y-6">
         {/* Logo */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            marginBottom: 32,
-          }}
-        >
-          <LogoMark size={32} className="text-foreground" />
+        <div className="flex justify-center mb-2">
+          <LogoMark size={28} className="text-[var(--ink)]" />
         </div>
 
         {/* Title */}
-        <h1
-          style={{
-            fontSize: 24,
-            fontWeight: 600,
-            color: 'var(--foreground)',
-            textAlign: 'center',
-            marginBottom: 8,
-            letterSpacing: '-0.02em',
-          }}
-        >
-          {mode === 'signin' ? 'Sign in' : 'Create account'}
+        <h1 className="text-display-sm font-semibold tracking-tight text-[var(--ink)] text-center">
+          {mode === 'signin' ? 'Sign in to Refract.' : 'Create your account.'}
         </h1>
 
         {/* Mode toggle */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 8,
-            marginBottom: 32,
-            background: 'var(--accent)',
-            borderRadius: 10,
-            padding: 4,
-          }}
-        >
+        <div className="flex gap-1.5 bg-[var(--canvas-soft-2)] border border-[var(--hairline)] rounded-sm p-1">
           <button
             onClick={() => {
               setMode('signin')
               setError('')
             }}
-            style={{
-              flex: 1,
-              padding: '10px 16px',
-              borderRadius: 8,
-              border: 'none',
-              background: mode === 'signin' ? 'var(--background)' : 'transparent',
-              color: 'var(--foreground)',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
+            className={`flex-1 py-1.5 px-3 rounded-xs border-none text-xs font-medium cursor-pointer transition-all duration-150 ${
+              mode === 'signin' 
+                ? 'bg-[var(--surface-card)] text-[var(--ink)] shadow-sm font-semibold' 
+                : 'bg-transparent text-[var(--ink-muted)] hover:text-[var(--ink)]'
+            }`}
           >
             Sign in
           </button>
@@ -156,85 +107,51 @@ export const AuthPage: React.FC = () => {
               setMode('signup')
               setError('')
             }}
-            style={{
-              flex: 1,
-              padding: '10px 16px',
-              borderRadius: 8,
-              border: 'none',
-              background: mode === 'signup' ? 'var(--background)' : 'transparent',
-              color: 'var(--foreground)',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
+            className={`flex-1 py-1.5 px-3 rounded-xs border-none text-xs font-medium cursor-pointer transition-all duration-150 ${
+              mode === 'signup' 
+                ? 'bg-[var(--surface-card)] text-[var(--ink)] shadow-sm font-semibold' 
+                : 'bg-transparent text-[var(--ink-muted)] hover:text-[var(--ink)]'
+            }`}
           >
             Sign up
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={mode === 'signin' ? handleSignIn : handleSignUp} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <form onSubmit={mode === 'signin' ? handleSignIn : handleSignUp} className="space-y-4">
           {/* Email */}
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 13,
-                fontWeight: 500,
-                color: 'var(--foreground)',
-                marginBottom: 6,
-              }}
-            >
+          <div className="space-y-1.5">
+            <label className="block text-xs font-mono text-[var(--ink-muted)] uppercase tracking-wider">
               Email
             </label>
             <input
               type="email"
-              className="input"
+              className="input text-sm"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={loading}
-              style={{ height: 40 }}
             />
           </div>
 
           {/* Password */}
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 13,
-                fontWeight: 500,
-                color: 'var(--foreground)',
-                marginBottom: 6,
-              }}
-            >
+          <div className="space-y-1.5">
+            <label className="block text-xs font-mono text-[var(--ink-muted)] uppercase tracking-wider">
               Password
             </label>
             <input
               type="password"
-              className="input"
+              className="input text-sm"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
-              style={{ height: 40 }}
             />
           </div>
 
           {/* Error message */}
           {error && (
-            <div
-              style={{
-                padding: '10px 12px',
-                borderRadius: 8,
-                background: 'rgba(255, 85, 119, 0.1)',
-                border: '1px solid #ff5577',
-                fontSize: 13,
-                color: '#ff5577',
-              }}
-            >
+            <div className="p-3 bg-[var(--semantic-error)]/10 border border-[var(--semantic-error)]/25 rounded-sm text-xs text-[var(--semantic-error)]">
               {error}
             </div>
           )}
@@ -243,17 +160,11 @@ export const AuthPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="btn btn-primary"
-            style={{
-              height: 40,
-              width: '100%',
-              justifyContent: 'center',
-              marginTop: 8,
-            }}
+            className="btn btn-primary w-full mt-2"
           >
             {loading ? (
               <>
-                <Loader2 size={16} className="animate-spin" />
+                <Loader2 size={14} className="animate-spin mr-1.5" />
                 {mode === 'signin' ? 'Signing in...' : 'Creating account...'}
               </>
             ) : mode === 'signin' ? (

@@ -1,34 +1,35 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Cursor Design Tokens — Light Mode (default) ──────────────────────────── */
+/* ─── Cursor Design Tokens — Warm-dark-ish marketing (default light) ───── */
 :root {
-  /* Brand */
-  --primary: #f54e00;
-  --primary-active: #d04200;
-  --on-primary: #ffffff;
+  /* Brand (Cursor: replace orange with white CTA) */
+  --primary: #f5f0e8; /* near-white */
+  --primary-active: #ffffff;
+  --on-primary: #14120b;
 
-  /* Surface */
-  --canvas: #f7f7f4;
-  --canvas-soft: #fafaf7;
-  --surface-card: #ffffff;
-  --surface-strong: #e6e5e0;
+  /* Surface (make it more dark) */
+  --canvas: #14120b;
+  --canvas-soft: #1a1814;
+  --canvas-soft-2: #222019;
+  --surface-card: #1a1814;
+  --surface-strong: #201e18;
 
-  /* Ink / Text */
-  --ink: #26251e;
-  --ink-muted: #807d72;
-  --ink-muted-soft: #a09c92;
-  --body: #5a5852;
-  --body-strong: #26251e;
+  /* Text */
+  --ink: #f5f0e8;
+  --ink-muted: #9e9a8e;
+  --ink-muted-soft: #807d72;
+  --body: #9e9a8e;
+  --body-strong: #f5f0e8;
 
   /* Hairlines */
-  --hairline: #e6e5e0;
-  --hairline-soft: #efeee8;
-  --hairline-strong: #cfcdc4;
+  --hairline: #2a2721;
+  --hairline-soft: #201e18;
+  --hairline-strong: #34312a;
 
   /* Timeline (AI-action signature) */
   --timeline-thinking: #dfa88f;
@@ -38,8 +39,19 @@
   --timeline-done: #c08532;
 
   /* Semantic */
-  --semantic-success: #1f8a65;
   --semantic-error: #cf2d56;
+  --semantic-success: #1f8a65;
+
+  /* Links (white-ish, no orange) */
+  --link: #f5f0e8;
+  --link-deep: #ffffff;
+
+  /* Shadows: hairline-only depth (minimal) */
+  --shadow-level-1: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-level-2: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-level-3: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-level-4: 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --shadow-level-5: 0 0 0 1px rgba(255, 255, 255, 0.08);
 
   /* Tailwind mapping */
   --background: var(--canvas);
@@ -57,70 +69,19 @@
   --ring: var(--primary);
   --radius: 8px;
 
-  /* Fonts */
-  --font-display: "Inter", system-ui, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-sans: "Inter", system-ui, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  /* Fonts (CursorGothic substitute via Inter fallback) */
+  --font-display: "CursorGothic", "Inter", system-ui, -apple-system, sans-serif;
+  --font-sans: "CursorGothic", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
 }
 
-/* ─── Cursor Design Tokens — Dark Mode ─────────────────────────────────────── */
+/* Dark-only: map [data-theme="dark"] to same tokens.
+   No light theme — Cursor is dark-first. */
 [data-theme="dark"] {
-  /* Brand */
-  --primary: #f54e00;
-  --primary-active: #ff6a22;
-  --on-primary: #ffffff;
-
-  /* Surface */
-  --canvas: #0a0a09;
-  --canvas-soft: #111110;
-  --surface-card: #1a1a19;
-  --surface-strong: #2a2a28;
-
-  /* Ink / Text */
-  --ink: #f0efe8;
-  --ink-muted: #8a8880;
-  --ink-muted-soft: #6a6860;
-  --body: #a09c92;
-  --body-strong: #f0efe8;
-
-  /* Hairlines */
-  --hairline: #2a2a28;
-  --hairline-soft: #222220;
-  --hairline-strong: #3a3a38;
-
-  /* Timeline (AI-action signature) */
-  --timeline-thinking: #dfa88f;
-  --timeline-grep: #9fc9a2;
-  --timeline-read: #9fbbe0;
-  --timeline-edit: #c0a8dd;
-  --timeline-done: #c08532;
-
-  /* Semantic */
-  --semantic-success: #22c55e;
-  --semantic-error: #ef4444;
-
-  /* Tailwind mapping */
-  --background: var(--canvas);
-  --foreground: var(--ink);
-  --card: var(--surface-card);
-  --card-foreground: var(--ink);
-  --popover: var(--surface-card);
-  --popover-foreground: var(--ink);
-  --muted: var(--surface-strong);
-  --muted-foreground: var(--ink-muted);
-  --accent: var(--canvas-soft);
-  --accent-foreground: var(--ink);
-  --border: var(--hairline);
-  --input: var(--surface-card);
-  --ring: var(--primary);
-  --radius: 8px;
-
-  /* Fonts */
-  --font-display: "Inter", system-ui, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-sans: "Inter", system-ui, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --canvas-soft-2: #222019;
 }
 
+/* Tailwind theme inline mapping */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -149,7 +110,8 @@
 html, body, #root {
   height: 100%;
   width: 100%;
-  overflow: hidden;
+  /* Cursor marketing needs scroll; don't force hidden */
+  overflow: auto;
 }
 
 body {
@@ -161,7 +123,6 @@ body {
   letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background 0.2s ease, color 0.2s ease;
 }
 
 /* ─── Typography ─────────────────────────────────────────── */
@@ -178,47 +139,29 @@ h1, h2, h3, h4, h5, h6, .display-text {
 ::-webkit-scrollbar-thumb:hover { background: var(--ink-muted); }
 
 /* ─── Global transitions ─────────────────────────────────── */
-button, a, input, textarea {
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+button, a {
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+input, textarea {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 /* ─── Page enter animations ──────────────────────────────── */
 .page-enter {
-  animation: pageEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: pageEnter 0.2s ease both;
 }
 
 @keyframes pageEnter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-/* ─── Staggered list items ───────────────────────────────── */
+/* ─── Staggered list items (disabled for performance) ────── */
 .stagger-item {
-  animation: staggerIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* no animation — items appear instantly */
 }
 
-@keyframes staggerIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* ─── Card hover lift ────────────────────────────────────── */
-.card {
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-              box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
+/* ─── Card hover lift (subtle, no transform) ────────────── */
 
 /* ─── Buttons ─────────────────────────────────────────────── */
 .btn {
@@ -233,58 +176,47 @@ button, a, input, textarea {
   font-size: 14px;
   font-weight: 500;
   line-height: 1.0;
-  letter-spacing: 0;
-  border-radius: 8px;
-  padding: 10px 18px;
-  height: 40px;
+  letter-spacing: -0.28px;
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  height: 36px; /* standard Vercel navigation CTA height */
   text-decoration: none;
 }
 
 .btn-primary {
   background: var(--primary);
   color: var(--on-primary);
-  transition: background 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.1s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .btn-primary:hover {
   background: var(--primary-active);
-  box-shadow: 0 2px 8px rgba(245, 78, 0, 0.25);
 }
 .btn-primary:active {
-  transform: scale(0.97);
-  box-shadow: none;
+  opacity: 0.85;
 }
 
 .btn-secondary {
   background: var(--surface-card);
   color: var(--ink);
-  border: 1px solid var(--hairline-strong);
-  transition: background 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid var(--hairline);
 }
 .btn-secondary:hover {
-  background: var(--canvas-soft);
-  border-color: var(--ink-muted-soft);
+  background: var(--canvas-soft-2);
+  border-color: var(--hairline-strong);
 }
 .btn-secondary:active {
-  transform: scale(0.97);
+  opacity: 0.85;
 }
 
 .btn-ghost {
   background: transparent;
   color: var(--ink-muted);
-  transition: background 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .btn-ghost:hover {
-  background: var(--canvas-soft);
+  background: var(--canvas-soft-2);
   color: var(--ink);
 }
 .btn-ghost:active {
-  transform: scale(0.97);
+  opacity: 0.85;
 }
 
 .btn-download {
@@ -292,54 +224,39 @@ button, a, input, textarea {
   color: var(--canvas);
   padding: 12px 20px;
   height: 44px;
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 .btn-download:hover {
   opacity: 0.9;
 }
 
-.btn-ghost {
-  background: transparent;
-  color: var(--ink-muted);
-}
-.btn-ghost:hover {
-  background: var(--canvas-soft);
-  color: var(--ink);
-}
-
 .btn-sm {
-  padding: 8px 14px;
+  padding: 6px 12px;
   font-size: 13px;
-  height: 32px;
+  height: 28px;
 }
 
 /* ─── Cards ───────────────────────────────────────────────── */
 .card {
   background: var(--surface-card);
   color: var(--ink);
-  border-radius: 12px;
+  border-radius: 8px; /* md corner */
   padding: 24px;
   border: 1px solid var(--hairline);
-  box-shadow: none;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-              box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-              border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-level-2);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-}
-
-[data-theme="dark"] .card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-color: var(--hairline-strong);
 }
 
 .card-featured {
   background: var(--ink);
   color: var(--canvas);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 24px;
+  box-shadow: var(--shadow-level-3);
 }
 
 /* ─── Badges ──────────────────────────────────────────────── */
@@ -348,45 +265,48 @@ button, a, input, textarea {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.88px;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: -0.28px;
   border-radius: 9999px;
-  padding: 4px 10px;
+  padding: 2px 8px;
 }
 .badge-muted {
   background: var(--surface-strong);
-  color: var(--ink);
+  color: var(--ink-muted);
+  border: 1px solid var(--hairline);
 }
 .badge-success {
-  background: rgba(31, 138, 101, 0.1);
+  background: rgba(0, 112, 243, 0.08);
   color: var(--semantic-success);
+  border: 1px solid rgba(0, 112, 243, 0.15);
 }
 .badge-high {
-  background: rgba(207, 45, 86, 0.1);
+  background: rgba(238, 0, 0, 0.08);
   color: var(--semantic-error);
+  border: 1px solid rgba(238, 0, 0, 0.15);
 }
 .badge-medium {
-  background: rgba(159, 187, 224, 0.3);
+  background: var(--canvas-soft-2);
   color: var(--ink);
+  border: 1px solid var(--hairline);
 }
 
 /* Timeline pills */
 .badge-timeline-thinking {
   background: var(--timeline-thinking);
-  color: var(--ink);
+  color: #171717;
 }
 .badge-timeline-grep {
   background: var(--timeline-grep);
-  color: var(--ink);
+  color: #171717;
 }
 .badge-timeline-read {
   background: var(--timeline-read);
-  color: var(--ink);
+  color: #171717;
 }
 .badge-timeline-edit {
   background: var(--timeline-edit);
-  color: var(--ink);
+  color: #171717;
 }
 .badge-timeline-done {
   background: var(--timeline-done);
@@ -397,41 +317,39 @@ button, a, input, textarea {
 .input {
   background: var(--surface-card);
   border: 1px solid var(--hairline);
-  border-radius: 8px;
-  height: 44px;
-  padding: 12px 16px;
-  font-size: 16px;
+  border-radius: var(--radius);
+  height: 36px;
+  padding: 8px 12px;
+  font-size: 14px;
   color: var(--ink);
   font-family: var(--font-sans);
   outline: none;
   width: 100%;
-  transition: border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(245, 78, 0, 0.15);
+  border-color: var(--ink-muted);
+  box-shadow: var(--shadow-level-2);
 }
-.input::placeholder { color: var(--ink-muted); }
+.input::placeholder { color: var(--ink-muted-soft); }
 
 .textarea {
   background: var(--surface-card);
   border: 1px solid var(--hairline);
-  border-radius: 8px;
-  padding: 12px 16px;
-  font-size: 16px;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 14px;
   color: var(--ink);
   font-family: var(--font-sans);
   outline: none;
   width: 100%;
   resize: vertical;
   line-height: 1.5;
-  transition: border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(245, 78, 0, 0.15);
+  border-color: var(--ink-muted);
+  box-shadow: var(--shadow-level-2);
 }
 
 /* ─── Section label ───────────────────────────────────────── */
@@ -490,3 +408,5 @@ code, pre, .font-mono {
   animation: shimmer 1.5s infinite;
   border-radius: 4px;
 }
+
+

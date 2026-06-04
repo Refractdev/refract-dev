@@ -1,7 +1,5 @@
-import Groq from 'groq-sdk'
+import { runAIChat } from '../_lib/ai'
 import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth'
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' })
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -28,8 +26,7 @@ ${fileSource || issue.lines.before?.join('\n') || ''}
 ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
 
   try {
-    const msg = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+    const explanation = await runAIChat({
       max_tokens: 256,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -38,10 +35,10 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
       temperature: 0.2,
     })
 
-    const explanation = msg.choices[0]?.message?.content ?? ''
     return res.status(200).json({ explanation })
   } catch (err: any) {
     console.error('Explain error:', err)
     return res.status(500).json({ error: err.message || 'Failed to generate explanation' })
   }
 }
+

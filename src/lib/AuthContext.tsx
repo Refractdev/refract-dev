@@ -204,7 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .replace(/\//g, '_')
       .replace(/=+$/g, '')
 
-    const url = `https://github.com/apps/refractdev/installations/new?state=${encodeURIComponent(state)}`
+    const url = `https://github.com/apps/refractcode/installations/new?state=${encodeURIComponent(state)}`
     window.location.href = url
   }, [])
 

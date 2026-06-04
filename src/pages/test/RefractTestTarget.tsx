@@ -1,5 +1,4 @@
 // RefractTestTarget.tsx — intentionally broken for Refract pipeline testing
-// DO NOT REFACTOR MANUALLY — let Refract handle it
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
@@ -9,10 +8,8 @@ import { ThemeProvider } from '../../components/ThemeProvider'
 import { formatDate } from '../../utils/formatDate'
 import { logger } from '../../utils/logger'
 
-// Props typed as `any` — kills all type safety immediately
 export default function Dashboard({ userId, theme, config, onSave, onDelete, onRefresh }: any) {
 
-  // State explosion: 8 independent useStates — should be consolidated
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState<any>(false)
   const [error, setError] = useState<any>(null)
@@ -20,10 +17,9 @@ export default function Dashboard({ userId, theme, config, onSave, onDelete, onR
   const [filter, setFilter] = useState<any>('')
   const [sortBy, setSortBy] = useState<any>('name')
   const [page, setPage] = useState<any>(1)
-  const [deadValue, setDeadValue] = useState<any>('i am never read or set again')
+  const [deadValue, setDeadValue] = useState<any>('never used again')
 
-  // useEffect with NO dependency array — re-runs on every single render
-  // also makes a fetch call with no cleanup function
+  // runs on every render — no dependency array
   useEffect(() => {
     setLoading(true)
     fetch(`/api/users/${userId}`)
@@ -32,17 +28,23 @@ export default function Dashboard({ userId, theme, config, onSave, onDelete, onR
         setData(d)
         setLoading(false)
       })
-    // missing: return () => { ... } cleanup
-    // missing: dependency array
   })
 
-  // stale closure — empty deps [] but reads `filter` and `sortBy` from outer scope
+  // stale closure — reads filter and sortBy but deps array is empty
   useEffect(() => {
-    console.log('syncing filter:', filter, 'sort:', sortBy)
+    console.log('syncing:', filter, sortBy)
     setPage(1)
   }, [])
 
-  // memory leak — addEventListener with no corresponding removeEventListener
+  // second stale closure — reads page and count but deps array is empty
+  useEffect(() => {
+    console.log('page drift:', page, count)
+    if (page > 1) {
+      setCount(count + 1)
+    }
+  }, [])
+
+  // memory leak — two event listeners with no cleanup
   useEffect(() => {
     window.addEventListener('resize', () => {
       setCount((c: any) => c + 1)
@@ -50,10 +52,9 @@ export default function Dashboard({ userId, theme, config, onSave, onDelete, onR
     document.addEventListener('click', () => {
       setFilter('')
     })
-    // missing: return () => { window.removeEventListener(...); document.removeEventListener(...) }
   }, [])
 
-  // direct API calls inside the component — should live in a service file
+  // api calls directly inside the component
   const handleSave = async (item: any) => {
     const res = await fetch('/api/items', {
       method: 'POST',
@@ -68,7 +69,7 @@ export default function Dashboard({ userId, theme, config, onSave, onDelete, onR
     setData((prev: any) => prev.filter((i: any) => i.id !== id))
   }
 
-  // duplicate logic — same map/filter/sort pattern repeated twice
+  // duplicate logic — identical map/filter/sort in two functions
   function processUsers(users: any[]) {
     return users
       .filter((u) => u.active)
@@ -83,19 +84,24 @@ export default function Dashboard({ userId, theme, config, onSave, onDelete, onR
       .sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  // sub-renderer 1 — large enough to extract as its own component
+  function processArchivedUsers(users: any[]) {
+    return users
+      .filter((u) => u.active)
+      .map((u) => ({ ...u, label: u.name.toUpperCase() }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
   function renderHeader(title: any, subtitle: any) {
     return (
       <div className="header">
         <h1>{title}</h1>
         <p>{subtitle}</p>
-        <span>Loaded {count} resize events</span>
+        <span>{count}</span>
         <Button theme={theme} config={config} label="Refresh" onClick={onRefresh} />
       </div>
     )
   }
 
-  // sub-renderer 2 — prop drilling: passes theme and config just to forward them
   function renderUserCard(user: any) {
     return (
       <div key={user.id} className="card">
@@ -103,56 +109,39 @@ export default function Dashboard({ userId, theme, config, onSave, onDelete, onR
         <h3>{user.name as string}</h3>
         <p>{user.email as string}</p>
         <span>{formatDate(user.createdAt)}</span>
-        <Button
-          theme={theme}
-          config={config}
-          label="Delete"
-          onClick={() => onDelete(user.id)}
-        />
+        <Button theme={theme} config={config} label="Delete" onClick={() => onDelete(user.id)} />
       </div>
     )
   }
 
-  // sub-renderer 3 — another extractable block
   function renderFilters(currentFilter: any, currentSort: any) {
     return (
       <div className="filters">
-        <input
-          value={currentFilter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter users..."
-        />
+        <input value={currentFilter} onChange={(e) => setFilter(e.target.value)} />
         <select value={currentSort} onChange={(e) => setSortBy(e.target.value)}>
           <option value="name">Name</option>
           <option value="date">Date</option>
-          <option value="email">Email</option>
         </select>
-        <Button
-          theme={theme}
-          config={config}
-          label="Reset"
-          onClick={() => { setFilter(''); setSortBy('name') }}
-        />
+        <Button theme={theme} config={config} label="Reset" onClick={() => { setFilter(''); setSortBy('name') }} />
       </div>
     )
   }
 
-  // no error handling in JSX even though `error` state exists
   if (loading) return <div>Loading...</div>
 
   return (
     <div className="dashboard">
-      {renderHeader('Dashboard', `Welcome back, user ${userId}`)}
+      {renderHeader('Dashboard', `Welcome ${userId}`)}
       {renderFilters(filter, sortBy)}
-      <div className="user-grid">
+      <div className="grid">
         {(data?.users ?? []).map((user: any) => renderUserCard(user))}
       </div>
       <div className="pagination">
-        <button onClick={() => setPage((p: any) => p - 1)} disabled={page <= 1}>Prev</button>
+        <button onClick={() => setPage((p: any) => p - 1)}>Prev</button>
         <span>Page {page}</span>
         <button onClick={() => setPage((p: any) => p + 1)}>Next</button>
       </div>
-      <button onClick={() => handleSave({ name: 'test' as any })}>Save Test Item</button>
+      <button onClick={() => handleSave({ name: 'test' as any })}>Save</button>
     </div>
   )
 }

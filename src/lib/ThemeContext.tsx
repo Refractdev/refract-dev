@@ -20,7 +20,7 @@ export const useTheme = () => useContext(ThemeContext)
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { profile, refreshProfile } = useAuth()
-  const [theme, setThemeState] = useState<Theme>('light')
+  const [theme, setThemeState] = useState<Theme>('dark')
   const [initialized, setInitialized] = useState(false)
 
   // Load theme from localStorage first
@@ -30,10 +30,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setThemeState(savedTheme)
       document.documentElement.setAttribute('data-theme', savedTheme)
     } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      const initialTheme = prefersDark ? 'dark' : 'light'
-      setThemeState(initialTheme)
-      document.documentElement.setAttribute('data-theme', initialTheme)
+      document.documentElement.setAttribute('data-theme', 'dark')
     }
     setInitialized(true)
   }, [])

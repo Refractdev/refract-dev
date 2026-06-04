@@ -33,12 +33,12 @@ interface SettingsPageProps {
 }
 
 const AVATAR_GRADIENTS = [
-  'linear-gradient(135deg, #f54e00, #ff9e00)',
-  'linear-gradient(135deg, #00b4db, #0083b0)',
-  'linear-gradient(135deg, #7f00ff, #e100ff)',
-  'linear-gradient(135deg, #11998e, #38ef7d)',
-  'linear-gradient(135deg, #f857a6, #ff5858)',
-  'linear-gradient(135deg, #1e3c72, #2a5298)',
+  'linear-gradient(135deg, #007cf0, #00dfd8)', // Develop
+  'linear-gradient(135deg, #7928ca, #ff0080)', // Preview
+  'linear-gradient(135deg, #ff4d4d, #f9cb28)', // Ship
+  'linear-gradient(135deg, #50e3c2, #29bc9b)', // Mint
+  'linear-gradient(135deg, #7928ca, #50e3c2)', // Violet-Mint
+  'linear-gradient(135deg, #ff0080, #f9cb28)', // Pink-Yellow
 ]
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChange }) => {
@@ -361,7 +361,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                           key={i}
                           onClick={() => handleSelectAvatar(grad)}
                           style={{ background: grad }}
-                          className="h-10 w-10 rounded-full border border-[var(--hairline)] hover:scale-105 active:scale-95 transition-all duration-200 relative focus:outline-none"
+                          className="h-10 w-10 rounded-full border border-[var(--hairline)] relative focus:outline-none cursor-pointer"
                         >
                           {isActive && (
                             <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-full">
@@ -420,10 +420,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                 {/* Light theme card */}
                 <div
                   onClick={() => setTheme('light')}
-                  className={`cursor-pointer p-5 rounded-2xl border-2 transition-all duration-300 flex flex-col justify-between gap-6 hover:shadow-md select-none ${
+                  className={`cursor-pointer p-5 rounded-2xl border-2 flex flex-col justify-between gap-6 select-none ${
                     theme === 'light'
-                      ? 'border-[var(--primary)] bg-[var(--canvas-soft)] scale-[1.01] shadow-sm'
-                      : 'border-[var(--hairline)] bg-[var(--surface-card)] hover:border-[var(--hairline-strong)]'
+                      ? 'border-[var(--primary)] bg-[var(--canvas-soft)] shadow-sm'
+                      : 'border-[var(--hairline)] bg-[var(--surface-card)]'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -445,10 +445,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                 {/* Dark theme card */}
                 <div
                   onClick={() => setTheme('dark')}
-                  className={`cursor-pointer p-5 rounded-2xl border-2 transition-all duration-300 flex flex-col justify-between gap-6 hover:shadow-md select-none ${
+                  className={`cursor-pointer p-5 rounded-2xl border-2 flex flex-col justify-between gap-6 select-none ${
                     theme === 'dark'
-                      ? 'border-[var(--primary)] bg-[var(--canvas-soft)] scale-[1.01] shadow-sm'
-                      : 'border-[var(--hairline)] bg-[var(--surface-card)] hover:border-[var(--hairline-strong)]'
+                      ? 'border-[var(--primary)] bg-[var(--canvas-soft)] shadow-sm'
+                      : 'border-[var(--hairline)] bg-[var(--surface-card)]'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -641,7 +641,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
               <button
                 className={`btn ${isGitHubConnected ? 'btn-secondary' : 'btn-primary'}`}
                 onClick={() => {
-                  const url = `https://github.com/apps/refractdev/installations/new`
+                  const url = `https://github.com/apps/refractcode/installations/new`
                   window.location.href = url
                 }}
                 style={{ gap: 8 }}
@@ -672,7 +672,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                     desc: t('settings.integrations.discordDesc'),
                   },
                 ].map(item => (
-                  <div key={item.id} className="card p-5 flex flex-col justify-between min-h-[160px] opacity-75 hover:opacity-100 transition-opacity duration-300">
+                  <div key={item.id} className="card p-5 flex flex-col justify-between min-h-[160px] opacity-75">
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-semibold text-sm text-[var(--ink)]">{item.title}</span>
@@ -744,14 +744,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
   const confirmationWord = lang === 'pt' ? 'ELIMINAR' : 'DELETE'
 
   return (
-    <div className="p-10 h-full overflow-y-auto box-sizing bg-[var(--canvas)] select-none">
+    <div className="p-8 md:p-12 h-full overflow-y-auto box-sizing bg-[var(--canvas-soft)] select-none">
       <div className="max-w-4xl mx-auto space-y-8 pb-16">
         <div>
-          <span className="section-label text-[var(--primary)] font-semibold tracking-wider uppercase mb-1 block">
+          <span className="section-label font-mono text-[10px] tracking-wider text-[var(--ink-muted-soft)] uppercase mb-1 block">
             {t('settings.title')}
           </span>
-          <h1 className="page-title text-3xl font-light text-[var(--ink)]">
-            {t(`settings.tabs.${activeTab}`)}
+          <h1 className="text-display-sm font-semibold tracking-tight text-[var(--ink)] mb-1">
+            {t(`settings.tabs.${activeTab}`)}.
           </h1>
         </div>
 

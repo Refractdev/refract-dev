@@ -1,4 +1,3 @@
-// src/workers/detectors/stateExplosion.ts
 import { Issue, ParsedFile, walk, lineOf, endLineOf } from '../../lib/analyze';
 
 interface StateVar {
@@ -6,10 +5,48 @@ interface StateVar {
   line: number;
   endLine: number;
   code: string;
+  initValue: string;
+  initType: string;
+}
+
+function inferType(initNode: any, source: string): string {
+  if (!initNode) return 'any';
+  switch (initNode.type) {
+    case 'StringLiteral': return 'string';
+    case 'NumericLiteral': return 'number';
+    case 'BooleanLiteral': return 'boolean';
+    case 'NullLiteral': return 'null';
+    case 'ArrayExpression': return 'any[]';
+    case 'ObjectExpression': return 'Record<string, any>';
+    case 'Identifier': {
+      if (initNode.name === 'undefined') return 'any';
+      return 'any';
+    }
+    case 'CallExpression': return 'any';
+    case 'MemberExpression': return 'any';
+    case 'TemplateLiteral': return 'string';
+    default: return 'any';
+  }
+}
+
+function getInitValue(initNode: any, source: string): string {
+  if (!initNode) return 'null';
+  if (initNode.start != null && initNode.end != null) {
+    return source.slice(initNode.start, initNode.end);
+  }
+  switch (initNode.type) {
+    case 'StringLiteral': return `'${initNode.value}'`;
+    case 'NumericLiteral': return String(initNode.value);
+    case 'BooleanLiteral': return String(initNode.value);
+    case 'NullLiteral': return 'null';
+    case 'Identifier': return initNode.name === 'undefined' ? 'undefined' : initNode.name;
+    default: return 'null';
+  }
 }
 
 export function detectStateExplosion(pf: ParsedFile): Issue[] {
   const issues: Issue[] = [];
+  const source = pf.lines.join('\n');
 
   walk(pf.ast, {
     FunctionDeclaration(node: any) {
@@ -45,17 +82,19 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
             if (first && first.type === 'Identifier') {
               const start = lineOf(node);
               const end = endLineOf(node);
+              const initNode = node.init.arguments[0];
               states.push({
                 name: first.name,
                 line: start,
                 endLine: end,
                 code: pf.lines.slice(start - 1, end).join('\n'),
+                initValue: getInitValue(initNode, source),
+                initType: inferType(initNode, source),
               });
             }
           }
         }
       },
-      // Do not enter nested component checks
       FunctionDeclaration(_node, skip) { skip?.() },
       FunctionExpression(_node, skip) { skip?.() },
       ArrowFunctionExpression(_node, skip) { skip?.() },
@@ -63,7 +102,6 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
 
     if (states.length < 5) return;
 
-    // Semantic grouping
     const groups = new Map<string, StateVar[]>();
 
     function getGroupKey(name: string): string {
@@ -74,7 +112,6 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
       if (lower.includes('filter') || lower.includes('sort') || lower.includes('search')) {
         return 'filters';
       }
-      // Split camelCase to get prefix
       const match = name.match(/^[a-z]+/);
       if (match) {
         const prefix = match[0];
@@ -90,11 +127,10 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
       groups.set(key, list);
     }
 
-    // Determine suggestion
     let isUseReducer = false;
     let reducerGroupsCount = 0;
-    for (const [key, list] of groups.entries()) {
-      if (list.length >= 2 && key !== 'other') {
+    for (const [, list] of groups.entries()) {
+      if (list.length >= 2 && getGroupKey(list[0].name) !== 'other') {
         reducerGroupsCount++;
       }
     }
@@ -102,7 +138,6 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
       isUseReducer = true;
     }
 
-    // Dominant group with 3+ states
     let dominantGroupKey = '';
     let dominantGroupStates: StateVar[] = [];
     for (const [key, list] of groups.entries()) {
@@ -120,13 +155,22 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
     const beforeText = allBeforeLines.join('\n');
 
     if (isUseReducer) {
-      // Suggest useReducer
-      const stateProps = states.map(s => `  ${s.name}: ...,`).join('\n');
-      const actionTypes = [...groups.keys()].filter(k => k !== 'other').map(k => `  | { type: 'SET_${k.toUpperCase()}', payload: any }`).join('\n');
-      const afterText = `// Estado explodido: sugere useReducer\n` +
-        `interface State {\n${states.map(s => `  ${s.name}: any;`).join('\n')}\n}\n\n` +
-        `type Action =\n${actionTypes || "  | { type: 'RESET' }"};\n\n` +
-        `function reducer(state: State, action: Action): State {\n  switch (action.type) {\n    default: return state;\n  }\n}\n\n` +
+      const stateProps = states.map(s => `  ${s.name}: ${s.initValue},`).join('\n');
+      const stateTypedProps = states.map(s => `  ${s.name}: ${s.initType};`).join('\n');
+      const actionTypes = [...groups.keys()].filter(k => k !== 'other')
+        .map(k => `  | { type: 'set${k.charAt(0).toUpperCase() + k.slice(1)}'; payload: Partial<Pick<State, ${groups.get(k)!.map(s => `'${s.name}'`).join(' | ')}>> }`)
+        .join('\n');
+      const reducerCases = [...groups.keys()].filter(k => k !== 'other')
+        .map(k => {
+          const groupVars = groups.get(k)!;
+          return `    case 'set${k.charAt(0).toUpperCase() + k.slice(1)}': {
+      return { ...state, ...action.payload };
+    }`;
+        }).join('\n');
+
+      const afterText = `interface State {\n${stateTypedProps}\n}\n\n` +
+        `type Action =\n${actionTypes || '  | { type: \'reset\' }'};\n\n` +
+        `function reducer(state: State, action: Action): State {\n  switch (action.type) {\n${reducerCases || '    default: return state;'}\n    default: return state;\n  }\n}\n\n` +
         `const [state, dispatch] = useReducer(reducer, {\n${stateProps}\n});`;
 
       issues.push({
@@ -142,13 +186,15 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
         patch: { before: beforeText, after: afterText },
       });
     } else if (dominantGroupKey && dominantGroupStates.length >= 3) {
-      // Suggest custom hook
       const domBefore = dominantGroupStates.map(s => s.code).join('\n');
       const hookName = `use${dominantGroupKey.charAt(0).toUpperCase() + dominantGroupKey.slice(1)}`;
-      const afterText = `// Grupo dominante "${dominantGroupKey}": sugere extrair para um Custom Hook\n` +
-        `const ${hookName} = () => {\n` +
-        dominantGroupStates.map(s => `  const [${s.name}, set${s.name.charAt(0).toUpperCase() + s.name.slice(1)}] = useState(null);`).join('\n') +
-        `\n  return {\n${dominantGroupStates.map(s => `    ${s.name}, set${s.name.charAt(0).toUpperCase() + s.name.slice(1)},`).join('\n')}\n  };\n};`;
+      const stateLines = dominantGroupStates.map(s =>
+        `  const [${s.name}, set${s.name.charAt(0).toUpperCase() + s.name.slice(1)}] = useState<${s.initType}>(${s.initValue});`
+      ).join('\n');
+      const returnProps = dominantGroupStates.map(s =>
+        `    ${s.name}, set${s.name.charAt(0).toUpperCase() + s.name.slice(1)},`
+      ).join('\n');
+      const afterText = `const ${hookName} = () => {\n${stateLines}\n  return {\n${returnProps}\n  };\n};`;
 
       issues.push({
         id: `state-explosion-hook-${pf.filePath}-${dominantGroupStates[0].line}`,
@@ -163,10 +209,8 @@ export function detectStateExplosion(pf: ParsedFile): Issue[] {
         patch: { before: domBefore, after: afterText },
       });
     } else {
-      // Generic state explosion
-      const stateProps = states.map(s => `  ${s.name}: ...,`).join('\n');
-      const afterText = `// Consolida múltiplos states num único state object\n` +
-        `const [state, setState] = useState({\n${stateProps}\n});`;
+      const stateProps = states.map(s => `  ${s.name}: ${s.initValue},`).join('\n');
+      const afterText = `const [state, setState] = useState({\n${stateProps}\n});`;
 
       issues.push({
         id: `state-explosion-generic-${pf.filePath}-${firstState.line}`,

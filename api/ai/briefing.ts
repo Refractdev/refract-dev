@@ -1,7 +1,5 @@
-import Groq from 'groq-sdk'
+import { runAIChat } from '../_lib/ai'
 import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth'
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' })
 
 const BRIEFING_PROMPTS: Record<string, { system: string; label: string }> = {
   en: {
@@ -14,7 +12,7 @@ Always respond in English. Direct tone, no fluff.`,
   pt: {
     system: `És o Refract, um assistente de qualidade de código.
 Gera um briefing curto (máximo 3 frases) sobre o estado do projeto analisado.
-Menciona os problemas mais críticos encontrados e o impacto geral.
+Mencionas os problemas mais críticos encontrados e o impacto geral.
 Responde sempre em português europeu. Tom direto, sem floreados.`,
     label: 'Português europeu',
   },
@@ -79,8 +77,7 @@ ${topIssues}
 ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
 
   try {
-    const msg = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+    const briefing = await runAIChat({
       max_tokens: 256,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -89,7 +86,6 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
       temperature: 0.2,
     })
 
-    const briefing = msg.choices[0]?.message?.content ?? ''
     return res.status(200).json({ briefing })
   } catch (err: any) {
     console.error('Briefing error:', err)

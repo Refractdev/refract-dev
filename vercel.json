@@ -12,7 +12,7 @@
     "api/github/webhook.ts": {
       "maxDuration": 10
     },
-    "api/jobs/*.ts": {
+    "api/jobs/process.ts": {
       "maxDuration": 120
     },
     "api/analysis/*.ts": {

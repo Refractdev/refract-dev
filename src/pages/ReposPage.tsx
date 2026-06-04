@@ -202,10 +202,9 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
     <div style={{ padding: '32px 36px', height: '100%', overflowY: 'auto', background: 'var(--canvas)' }}>
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .spin { animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+        .spin { animation: spin 1s linear infinite; }
         @keyframes pulse { 0% { opacity: 0.3 } 50% { opacity: 0.6 } 100% { opacity: 0.3 } }
         .skeleton { background: var(--surface-strong); border-radius: 8px; animation: pulse 1.5s infinite ease-in-out; }
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
       `}</style>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 16 }}>
@@ -327,7 +326,6 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
                     minHeight: 62,
                     padding: '10px 16px',
                     borderBottom: index === filteredRepos.length - 1 ? 'none' : '1px solid var(--hairline)',
-                    animation: `fadeUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) ${index * 0.03}s both`,
                   }}
                 >
                   <div style={{ width: '40%', display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>

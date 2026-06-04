@@ -9,6 +9,7 @@
     "format": "biome format --write ./src",
     "check": "biome check ./src",
     "typecheck": "tsc --noEmit",
+    "test:refract-regression": "tsx scripts/refract-regression.ts",
     "dev": "node scripts/dev.mjs",
     "dev:client": "vite --port 3000",
     "dev:vercel": "vercel dev --listen 3000",

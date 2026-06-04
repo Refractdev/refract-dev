@@ -7,58 +7,59 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Cursor brand
-        primary: "#f54e00",
-        "primary-active": "#d04200",
-        "on-primary": "#ffffff",
+        // Vercel brand colors mapped dynamically to CSS variables
+        primary: "var(--primary)",
+        "primary-active": "var(--primary-active)",
+        "on-primary": "var(--on-primary)",
 
-        // Cursor surface
-        canvas: "#f7f7f4",
-        "canvas-soft": "#fafaf7",
-        "surface-card": "#ffffff",
-        "surface-strong": "#e6e5e0",
+        // Vercel surface
+        canvas: "var(--canvas)",
+        "canvas-soft": "var(--canvas-soft)",
+        "canvas-soft-2": "var(--canvas-soft-2)",
+        "surface-card": "var(--surface-card)",
+        "surface-strong": "var(--surface-strong)",
 
-        // Cursor ink/text
-        ink: "#26251e",
-        "ink-muted": "#807d72",
-        "ink-muted-soft": "#a09c92",
-        "body": "#5a5852",
-        "body-strong": "#26251e",
+        // Vercel ink/text
+        ink: "var(--ink)",
+        "ink-muted": "var(--ink-muted)",
+        "ink-muted-soft": "var(--ink-muted-soft)",
+        "body": "var(--body)",
+        "body-strong": "var(--body-strong)",
 
-        // Cursor hairlines
-        hairline: "#e6e5e0",
-        "hairline-soft": "#efeee8",
-        "hairline-strong": "#cfcdc4",
+        // Vercel hairlines
+        hairline: "var(--hairline)",
+        "hairline-soft": "var(--hairline-soft)",
+        "hairline-strong": "var(--hairline-strong)",
 
-        // Cursor timeline (AI-action signature)
-        "timeline-thinking": "#dfa88f",
-        "timeline-grep": "#9fc9a2",
-        "timeline-read": "#9fbbe0",
-        "timeline-edit": "#c0a8dd",
-        "timeline-done": "#c08532",
+        // Vercel timeline (AI-action signature)
+        "timeline-thinking": "var(--timeline-thinking)",
+        "timeline-grep": "var(--timeline-grep)",
+        "timeline-read": "var(--timeline-read)",
+        "timeline-edit": "var(--timeline-edit)",
+        "timeline-done": "var(--timeline-done)",
 
-        // Cursor semantic
-        "semantic-success": "#1f8a65",
-        "semantic-error": "#cf2d56",
+        // Vercel semantic
+        "semantic-success": "var(--semantic-success)",
+        "semantic-error": "var(--semantic-error)",
 
-        // Tailwind defaults mapped to Cursor
-        background: "#f7f7f4",
-        foreground: "#26251e",
-        card: "#ffffff",
-        "card-foreground": "#26251e",
-        popover: "#ffffff",
-        "popover-foreground": "#26251e",
-        muted: "#e6e5e0",
-        "muted-foreground": "#807d72",
-        accent: "#fafaf7",
-        "accent-foreground": "#26251e",
-        border: "#e6e5e0",
-        input: "#ffffff",
-        ring: "#f54e00",
+        // Tailwind defaults mapped to Vercel
+        background: "var(--canvas-soft)",
+        foreground: "var(--ink)",
+        card: "var(--surface-card)",
+        "card-foreground": "var(--ink)",
+        popover: "var(--surface-card)",
+        "popover-foreground": "var(--ink)",
+        muted: "var(--surface-strong)",
+        "muted-foreground": "var(--ink-muted)",
+        accent: "var(--canvas-soft-2)",
+        "accent-foreground": "var(--ink)",
+        border: "var(--hairline)",
+        input: "var(--surface-card)",
+        ring: "var(--primary)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "'Helvetica Neue'", "Helvetica", "Arial", "sans-serif"],
-        mono: ["'JetBrains Mono'", "'Fira Code'", "monospace"],
+        sans: ["Geist", "Inter", "system-ui", "-apple-system", "sans-serif"],
+        mono: ["'Geist Mono'", "'JetBrains Mono'", "'IBM Plex Mono'", "ui-monospace", "monospace"],
       },
       borderRadius: {
         none: "0px",
@@ -67,7 +68,7 @@ module.exports = {
         md: "8px",
         lg: "12px",
         xl: "16px",
-        pill: "9999px",
+        pill: "100px",
         full: "9999px",
       },
       spacing: {
@@ -75,26 +76,36 @@ module.exports = {
         xs: "8px",
         sm: "12px",
         base: "16px",
-        md: "20px",
+        md: "16px", // aligned to Vercel base 4 system
         lg: "24px",
         xl: "32px",
         xxl: "48px",
-        section: "80px",
+        section: "192px",
       },
       fontSize: {
-        "display-mega": ["72px", { lineHeight: "1.1", letterSpacing: "-2.16px", fontWeight: "400" }],
-        "display-lg": ["36px", { lineHeight: "1.2", letterSpacing: "-0.72px", fontWeight: "400" }],
-        "display-md": ["26px", { lineHeight: "1.25", letterSpacing: "-0.325px", fontWeight: "400" }],
-        "display-sm": ["22px", { lineHeight: "1.3", letterSpacing: "-0.11px", fontWeight: "400" }],
-        "title-md": ["18px", { lineHeight: "1.4", letterSpacing: "0", fontWeight: "600" }],
-        "title-sm": ["16px", { lineHeight: "1.4", letterSpacing: "0", fontWeight: "600" }],
-        "body-md": ["16px", { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" }],
-        "body-sm": ["14px", { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" }],
-        caption: ["13px", { lineHeight: "1.4", letterSpacing: "0", fontWeight: "400" }],
-        "caption-uppercase": ["11px", { lineHeight: "1.4", letterSpacing: "0.88px", fontWeight: "600", textTransform: "uppercase" }],
-        code: ["13px", { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" }],
-        button: ["14px", { lineHeight: "1.0", letterSpacing: "0", fontWeight: "500" }],
-        "nav-link": ["14px", { lineHeight: "1.4", letterSpacing: "0", fontWeight: "500" }],
+        // Vercel Typography Presets
+        "display-xl": ["48px", { lineHeight: "48px", letterSpacing: "-2.4px", fontWeight: "600" }],
+        "display-lg": ["32px", { lineHeight: "40px", letterSpacing: "-1.28px", fontWeight: "600" }],
+        "display-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.96px", fontWeight: "600" }],
+        "display-sm": ["20px", { lineHeight: "28px", letterSpacing: "-0.6px", fontWeight: "600" }],
+        "body-lg": ["18px", { lineHeight: "28px", letterSpacing: "0px", fontWeight: "400" }],
+        "body-md": ["16px", { lineHeight: "24px", letterSpacing: "0px", fontWeight: "400" }],
+        "body-md-strong": ["16px", { lineHeight: "24px", letterSpacing: "0px", fontWeight: "500" }],
+        "body-sm": ["14px", { lineHeight: "20px", letterSpacing: "-0.28px", fontWeight: "400" }],
+        "body-sm-strong": ["14px", { lineHeight: "20px", letterSpacing: "-0.28px", fontWeight: "500" }],
+        "caption": ["12px", { lineHeight: "16px", letterSpacing: "0px", fontWeight: "400" }],
+        "caption-mono": ["12px", { lineHeight: "16px", letterSpacing: "0px", fontWeight: "400" }],
+        "code": ["13px", { lineHeight: "20px", letterSpacing: "0px", fontWeight: "400" }],
+        "button-md": ["14px", { lineHeight: "20px", letterSpacing: "0px", fontWeight: "500" }],
+        "button-lg": ["16px", { lineHeight: "24px", letterSpacing: "0px", fontWeight: "500" }],
+        
+        // Compatibility Aliases for older classes
+        "display-mega": ["72px", { lineHeight: "1.1", letterSpacing: "-2.16px", fontWeight: "600" }],
+        "title-md": ["18px", { lineHeight: "24px", letterSpacing: "0px", fontWeight: "600" }],
+        "title-sm": ["16px", { lineHeight: "20px", letterSpacing: "0px", fontWeight: "600" }],
+        "caption-uppercase": ["11px", { lineHeight: "16px", letterSpacing: "0.88px", fontWeight: "600", textTransform: "uppercase" }],
+        "button": ["14px", { lineHeight: "20px", letterSpacing: "0px", fontWeight: "500" }],
+        "nav-link": ["14px", { lineHeight: "20px", letterSpacing: "-0.28px", fontWeight: "400" }],
       },
     },
   },
