@@ -21,6 +21,7 @@ import {
   X
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
+import { GITHUB_APP_URL } from '../lib/githubApp'
 import { useTheme } from '../lib/ThemeContext'
 
 import { supabase, UserProfile } from '../lib/supabase'
@@ -641,8 +642,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
               <button
                 className={`btn ${isGitHubConnected ? 'btn-secondary' : 'btn-primary'}`}
                 onClick={() => {
-                  const url = `https://github.com/apps/refractcode/installations/new`
-                  window.location.href = url
+                  window.location.href = GITHUB_APP_URL
                 }}
                 style={{ gap: 8 }}
               >

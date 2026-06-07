@@ -28,6 +28,7 @@ export const dictionary = {
       settings: 'Settings',
       signOut: 'Sign Out',
       backToWorkspace: 'Back to Workspace',
+      feedback: 'Feedback',
     },
     settings: {
       title: 'Settings',
@@ -270,6 +271,7 @@ export const dictionary = {
       settings: 'Configurações',
       signOut: 'Sair',
       backToWorkspace: 'Voltar ao Workspace',
+      feedback: 'Feedback',
     },
     settings: {
       title: 'Configurações',
@@ -512,6 +514,7 @@ export const dictionary = {
       settings: 'Configuración',
       signOut: 'Cerrar sesión',
       backToWorkspace: 'Volver al espacio',
+      feedback: 'Comentarios',
     },
     settings: {
       title: 'Configuración',
@@ -730,6 +733,7 @@ export const dictionary = {
       settings: 'Paramètres',
       signOut: 'Déconnexion',
       backToWorkspace: 'Retour à l\'espace',
+      feedback: 'Commentaires',
     },
     settings: {
       title: 'Paramètres',
@@ -948,6 +952,7 @@ export const dictionary = {
       settings: 'Einstellungen',
       signOut: 'Abmelden',
       backToWorkspace: 'Zurück zum Arbeitsbereich',
+      feedback: 'Feedback',
     },
     settings: {
       title: 'Einstellungen',

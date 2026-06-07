@@ -4,6 +4,7 @@ import { runAnalysis } from '../../src/lib/analyze'
 import { analyzeDrift, type SnapshotData } from '../_lib/drift'
 import { getAuthenticatedUser } from '../_lib/auth'
 import { throwIfDbError } from '../_lib/db'
+import { trackEvent } from '../../src/lib/analytics'
 
 import { cloneRepo } from '../_lib/clone'
 
@@ -55,6 +56,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else {
       return res.status(400).json({ error: 'Provide files, repoUrl, or both' })
     }
+
+    void trackEvent('analysis_started', {
+      project_id: projectId,
+      repo_url: repoUrl ?? undefined,
+      branch: branch ?? 'main',
+      trigger: 'api_analysis_run',
+    })
 
     // ── Run analysis ────────────────────────────────────────────────────────
     const fileMap = new Map(Object.entries(files))
@@ -118,6 +126,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
       .eq('id', projectId)
     throwIfDbError(projectUpdateError, '[analysis/run] Failed to update project status')
+
+    void trackEvent('analysis_completed', {
+      project_id: projectId,
+      score,
+      issues_count: result.summary.total,
+    })
 
     // ── Run drift detection and save alerts ─────────────────────────────────
     try {

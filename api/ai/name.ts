@@ -1,7 +1,8 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { runAIChat } from '../_lib/ai'
 import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth'
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
@@ -44,4 +45,3 @@ Sem markdown. Sem explicações. Sem prefixos extra.`
     return res.status(500).json({ error: error.message || 'Failed to suggest name' })
   }
 }
-

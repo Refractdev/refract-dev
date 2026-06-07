@@ -1,131 +1,227 @@
 import type { DriftReport, GitHubCommit } from './api'
 import type { HealthSnapshot } from './health'
+import type { Project } from '../shared/types'
 
-export const MOCK_PROJECT = {
-  id: '__mock__',
-  name: 'react-store',
-  path: '~/dev/react-store',
-  repo: 'https://github.com/acme/react-store',
-  branch: 'main',
-  status: 'Not analysed' as const,
-  last_run: new Date(Date.now() - 86400000).toISOString(),
-  created_at: new Date(Date.now() - 1209600000).toISOString(),
+type MockSnapshot = HealthSnapshot & {
+  issue_counts_by_category?: Record<string, number>
 }
 
-export const MOCK_SNAPSHOTS: HealthSnapshot[] = [
-  { score: 94, timestamp: new Date(Date.now() - 1209600000).toISOString(), issueCount: 8, high: 0, medium: 2, low: 6 },
-  { score: 91, timestamp: new Date(Date.now() - 1036800000).toISOString(), issueCount: 12, high: 0, medium: 4, low: 8 },
-  { score: 85, timestamp: new Date(Date.now() - 864000000).toISOString(), issueCount: 18, high: 1, medium: 6, low: 11 },
-  { score: 76, timestamp: new Date(Date.now() - 691200000).toISOString(), issueCount: 27, high: 2, medium: 9, low: 16 },
-  { score: 64, timestamp: new Date(Date.now() - 518400000).toISOString(), issueCount: 39, high: 4, medium: 13, low: 22 },
-  { score: 58, timestamp: new Date(Date.now() - 345600000).toISOString(), issueCount: 46, high: 6, medium: 15, low: 25 },
-  { score: 69, timestamp: new Date(Date.now() - 172800000).toISOString(), issueCount: 34, high: 3, medium: 11, low: 20 },
-  { score: 78, timestamp: new Date(Date.now() - 86400000).toISOString(), issueCount: 24, high: 2, medium: 8, low: 14 },
+type MockProject = Project & {
+  stack: string
+  files: number
+  healthScore: number
+}
+
+const DAY = 24 * 60 * 60 * 1000
+const now = Date.now()
+
+const daysAgo = (days: number): string => new Date(now - (days * DAY)).toISOString()
+
+export const MOCK_PROJECT = {
+  id: 'mock-storefront-app',
+  name: 'storefront-app',
+  path: '~/code/storefront-app',
+  repo: 'https://github.com/lovable-labs/storefront-app',
+  branch: 'main',
+  status: 'Refracted' as const,
+  last_run: daysAgo(1),
+  created_at: daysAgo(30),
+  stack: 'React + TypeScript + Tailwind',
+  files: 847,
+  healthScore: 61,
+} as MockProject
+
+export const MOCK_SNAPSHOTS: MockSnapshot[] = [
+  {
+    score: 48,
+    timestamp: daysAgo(30),
+    issueCount: 52,
+    high: 0,
+    medium: 0,
+    low: 52,
+  },
+  {
+    score: 50,
+    timestamp: daysAgo(26),
+    issueCount: 50,
+    high: 0,
+    medium: 0,
+    low: 50,
+  },
+  {
+    score: 57,
+    timestamp: daysAgo(22),
+    issueCount: 43,
+    high: 0,
+    medium: 0,
+    low: 43,
+  },
+  {
+    score: 66,
+    timestamp: daysAgo(18),
+    issueCount: 34,
+    high: 0,
+    medium: 0,
+    low: 34,
+  },
+  {
+    score: 74,
+    timestamp: daysAgo(14),
+    issueCount: 26,
+    high: 0,
+    medium: 0,
+    low: 26,
+  },
+  {
+    score: 58,
+    timestamp: daysAgo(10),
+    issueCount: 42,
+    high: 0,
+    medium: 0,
+    low: 42,
+  },
+  {
+    score: 54,
+    timestamp: daysAgo(5),
+    issueCount: 46,
+    high: 0,
+    medium: 0,
+    low: 46,
+    issue_counts_by_category: {
+      'any-type': 19,
+      'dead-state': 9,
+      'prop-drilling': 12,
+      'api-in-component': 6,
+      'unused-import': 20,
+    },
+  },
+  {
+    score: 61,
+    timestamp: daysAgo(1),
+    issueCount: 39,
+    high: 0,
+    medium: 0,
+    low: 39,
+    issue_counts_by_category: {
+      'any-type': 23,
+      'dead-state': 8,
+      'prop-drilling': 11,
+      'api-in-component': 7,
+      'unused-import': 19,
+    },
+  },
 ]
 
 export const MOCK_DRIFT_REPORT: DriftReport = {
-  projectId: '__mock__',
+  projectId: 'mock-storefront-app',
   totalSnapshots: 8,
-  currentScore: 78,
-  previousScore: 69,
-  scoreDelta: 9,
+  currentScore: 61,
+  previousScore: 54,
+  scoreDelta: 7,
   trends: [
-    { category: 'any-type', slope: 2.4, direction: 'worsening', currentCount: 12, averageCount: 7.2 },
-    { category: 'prop-drilling', slope: 1.8, direction: 'worsening', currentCount: 8, averageCount: 4.5 },
-    { category: 'effect-no-deps', slope: -0.5, direction: 'improving', currentCount: 3, averageCount: 5.8 },
-    { category: 'dead-state', slope: -1.2, direction: 'improving', currentCount: 1, averageCount: 3.4 },
-    { category: 'oversized-component', slope: 0.3, direction: 'stable', currentCount: 4, averageCount: 3.6 },
-    { category: 'console-log', slope: -0.8, direction: 'improving', currentCount: 2, averageCount: 4.1 },
-    { category: 'missing-docs', slope: 2.1, direction: 'worsening', currentCount: 9, averageCount: 5.3 },
+    { category: 'any-type', slope: 2.8, direction: 'worsening', currentCount: 23, averageCount: 15.6 },
+    { category: 'dead-state', slope: -1.1, direction: 'improving', currentCount: 8, averageCount: 10.2 },
+    { category: 'prop-drilling', slope: 0.4, direction: 'stable', currentCount: 11, averageCount: 10.4 },
+    { category: 'api-in-component', slope: 1.3, direction: 'worsening', currentCount: 7, averageCount: 4.8 },
+    { category: 'unused-import', slope: 0.6, direction: 'worsening', currentCount: 19, averageCount: 17.2 },
   ],
   anomalies: [
-    { category: 'any-type', type: 'spike', currentCount: 12, expectedCount: 6, deviationPercent: 100, severity: 'critical' },
-    { category: 'prop-drilling', type: 'spike', currentCount: 8, expectedCount: 4, deviationPercent: 87, severity: 'warning' },
-    { category: 'console-log', type: 'drop', currentCount: 2, expectedCount: 5, deviationPercent: 60, severity: 'info' },
-  ],
-  decayHotspots: [
     {
-      filePath: 'src/components/CheckoutForm.tsx',
-      fileName: 'CheckoutForm.tsx',
-      appearances: 6,
-      latestCount: 14,
-      growthRate: 2.1,
+      category: 'any-type',
+      type: 'spike',
+      currentCount: 23,
+      expectedCount: 9,
+      deviationPercent: 156,
       severity: 'critical',
     },
     {
-      filePath: 'src/hooks/useAuth.ts',
-      fileName: 'useAuth.ts',
-      appearances: 5,
-      latestCount: 8,
-      growthRate: 1.4,
+      category: 'api-in-component',
+      type: 'spike',
+      currentCount: 7,
+      expectedCount: 2,
+      deviationPercent: 250,
       severity: 'warning',
     },
+  ],
+  decayHotspots: [
     {
-      filePath: 'src/utils/validators.ts',
-      fileName: 'validators.ts',
-      appearances: 4,
-      latestCount: 6,
-      growthRate: 0.9,
-      severity: 'warning',
-    },
-    {
-      filePath: 'src/pages/admin/Dashboard.tsx',
-      fileName: 'Dashboard.tsx',
-      appearances: 3,
-      latestCount: 11,
-      growthRate: 2.8,
+      filePath: 'src/components/ProductCard.tsx',
+      fileName: 'ProductCard.tsx',
+      appearances: 8,
+      latestCount: 847,
+      growthRate: 6.2,
       severity: 'critical',
     },
   ],
   alerts: [
     {
-      alert_type: 'score_drop',
-      severity: 'warning',
-      message: 'Saúde do código desceu 16 pontos (94 → 78) ao longo das últimas 8 análises.',
-      metadata: { from: 94, to: 78, delta: -16 },
-    },
-    {
       alert_type: 'category_spike',
       severity: 'critical',
-      message: 'Categoria "any-type" em tendência de agravamento contínuo (média 7.2 → atual 12).',
-      metadata: { category: 'any-type', slope: 2.4, current: 12, average: 7.2 },
+      message: 'any-type spiked by 14 occurrences in the latest commit burst (9 -> 23).',
+      metadata: { category: 'any-type', delta: 14, before: 9, after: 23 },
+    },
+    {
+      alert_type: 'decay_hotspot',
+      severity: 'critical',
+      message: 'ProductCard.tsx has grown to 847 lines and is now a maintenance hotspot.',
+      metadata: { filePath: 'src/components/ProductCard.tsx', lines: 847 },
     },
     {
       alert_type: 'anomaly',
       severity: 'warning',
-      message: 'Pico anómalo em "prop-drilling": 8 (esperado ~4, +87%).',
-      metadata: { category: 'prop-drilling', type: 'spike', current: 8, expected: 4, deviation: 87 },
-    },
-    {
-      alert_type: 'decay_hotspot',
-      severity: 'critical',
-      message: 'Ficheiro "CheckoutForm.tsx" em degradação (+2.1 issues/análise, 14 issues atuais).',
-      metadata: { filePath: 'src/components/CheckoutForm.tsx', growthRate: 2.1, latestCount: 14 },
-    },
-    {
-      alert_type: 'decay_hotspot',
-      severity: 'warning',
-      message: 'Ficheiro "Dashboard.tsx" em degradação (+2.8 issues/análise, 11 issues atuais).',
-      metadata: { filePath: 'src/pages/admin/Dashboard.tsx', growthRate: 2.8, latestCount: 11 },
+      message: '5 direct fetch() calls were detected inside components during the latest scan.',
+      metadata: { category: 'api-in-component', current: 5, expected: 1 },
     },
   ],
 }
 
 export const MOCK_COMMITS: GitHubCommit[] = [
-  { sha: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0', message: 'fix: resolve cart total calculation with applied coupons edge case', author: 'Maria Santos', date: new Date(Date.now() - 3600000).toISOString(), url: '#' },
-  { sha: 'b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1', message: 'feat: add optimistic UI updates for wishlist toggle', author: 'João Pereira', date: new Date(Date.now() - 7200000).toISOString(), url: '#' },
-  { sha: 'c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2', message: 'refactor: extract address validation into shared utility', author: 'Ana Costa', date: new Date(Date.now() - 14400000).toISOString(), url: '#' },
-  { sha: 'd4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3', message: 'fix: prevent double submission on payment form', author: 'Maria Santos', date: new Date(Date.now() - 28800000).toISOString(), url: '#' },
-  { sha: 'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4', message: 'feat: implement shipping method selector with price breakdown', author: 'João Pereira', date: new Date(Date.now() - 57600000).toISOString(), url: '#' },
-  { sha: 'f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5', message: 'chore: update dependencies and fix type errors in checkout', author: 'Ana Costa', date: new Date(Date.now() - 115200000).toISOString(), url: '#' },
-  { sha: 'a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', message: 'fix: handle empty cart state in CheckoutForm component', author: 'Maria Santos', date: new Date(Date.now() - 230400000).toISOString(), url: '#' },
-  { sha: 'b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7', message: 'feat: add order confirmation email template preview', author: 'João Pereira', date: new Date(Date.now() - 460800000).toISOString(), url: '#' },
-  { sha: 'c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8', message: 'refactor: split useAuth hook into smaller composable hooks', author: 'Ana Costa', date: new Date(Date.now() - 691200000).toISOString(), url: '#' },
-  { sha: 'd0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9', message: 'feat: implement product search with debounced queries', author: 'Maria Santos', date: new Date(Date.now() - 864000000).toISOString(), url: '#' },
+  {
+    sha: 'a1c9f1d8b2e4a6c7d9e0f1a2b3c4d5e6f7a8b901',
+    message: 'feat: add checkout flow',
+    author: 'Lovable',
+    date: daysAgo(1),
+    url: 'https://github.com/lovable-labs/storefront-app/commit/a1c9f1d8b2e4a6c7d9e0f1a2b3c4d5e6f7a8b901',
+  },
+  {
+    sha: 'b2d0e2f9c3a5b7d8e0f1a2b3c4d5e6f7a8b9c012',
+    message: 'fix: cart state not updating',
+    author: 'Bolt',
+    date: daysAgo(3),
+    url: 'https://github.com/lovable-labs/storefront-app/commit/b2d0e2f9c3a5b7d8e0f1a2b3c4d5e6f7a8b9c012',
+  },
+  {
+    sha: 'c3e1f3a0d4b6c8e9f1a2b3c4d5e6f7a8b9c0d123',
+    message: 'refactor: split ProductCard',
+    author: 'Marta',
+    date: daysAgo(5),
+    url: 'https://github.com/lovable-labs/storefront-app/commit/c3e1f3a0d4b6c8e9f1a2b3c4d5e6f7a8b9c0d123',
+  },
+  {
+    sha: 'd4f2a4b1e5c7d9f0a1b2c3d4e5f6a7b8c9d0e234',
+    message: 'feat: wire product filters to search',
+    author: 'Tiago',
+    date: daysAgo(7),
+    url: 'https://github.com/lovable-labs/storefront-app/commit/d4f2a4b1e5c7d9f0a1b2c3d4e5f6a7b8c9d0e234',
+  },
+  {
+    sha: 'e5a3b5c2f6d8e0a1b2c3d4e5f6a7b8c9d0e1f345',
+    message: 'fix: preserve session after refresh',
+    author: 'Ana',
+    date: daysAgo(10),
+    url: 'https://github.com/lovable-labs/storefront-app/commit/e5a3b5c2f6d8e0a1b2c3d4e5f6a7b8c9d0e1f345',
+  },
+  {
+    sha: 'f6b4c6d3a7e9f1b2c3d4e5f6a7b8c9d0e1f2a456',
+    message: 'chore: tighten Tailwind classes in header',
+    author: 'João',
+    date: daysAgo(13),
+    url: 'https://github.com/lovable-labs/storefront-app/commit/f6b4c6d3a7e9f1b2c3d4e5f6a7b8c9d0e1f2a456',
+  },
 ]
 
-export const MOCK_LAST_SNAPSHOT: HealthSnapshot = MOCK_SNAPSHOTS[MOCK_SNAPSHOTS.length - 1]
-export const MOCK_PREV_SNAPSHOT: HealthSnapshot = MOCK_SNAPSHOTS[MOCK_SNAPSHOTS.length - 2]
+export const MOCK_LAST_SNAPSHOT: MockSnapshot = MOCK_SNAPSHOTS[MOCK_SNAPSHOTS.length - 1]
+export const MOCK_PREV_SNAPSHOT: MockSnapshot = MOCK_SNAPSHOTS[MOCK_SNAPSHOTS.length - 2]
 
 export function isMockMode(): boolean {
   if (typeof window === 'undefined') return false

@@ -11,7 +11,8 @@ import {
   Globe,
   ArrowLeft,
   CreditCard,
-  ShieldAlert
+  ShieldAlert,
+  Mail
 } from 'lucide-react';
 import { LogoMark } from './Logo';
 import { useAuth } from '../lib/AuthContext';
@@ -176,6 +177,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
         
+        <a
+          href="mailto:refractcode@gmail.com?subject=Feedback%20Refract"
+          className="flex w-full items-center gap-3 px-3 py-2 text-[14px] font-medium text-[var(--ink-muted)] hover:text-[var(--primary)] hover:bg-[var(--primary)]/10 rounded-sm outline-none"
+        >
+          <Mail size={16} />
+          <span>{t('sidebar.feedback')}</span>
+        </a>
+
         <button
           onClick={signOut}
           className="flex w-full items-center gap-3 px-3 py-2 text-[14px] font-medium text-[var(--ink-muted)] hover:text-[var(--semantic-error)] hover:bg-[var(--semantic-error)]/10 rounded-sm outline-none"

@@ -1,8 +1,9 @@
-import { AlertCircle, ArrowLeft, GitBranch, Github, Link, Loader2, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, FolderOpen, GitBranch, Github, Link, Loader2, X } from 'lucide-react';
 import type React from 'react';
 import { useState, useEffect } from 'react';
 import { useFiles } from '../context/FilesContext';
 import { useAuth } from '../lib/AuthContext';
+import { trackEvent } from '../lib/analytics';
 import { RateLimitError, cloneGitHubRepo } from '../lib/api';
 import { createProject } from '../lib/db';
 import type { Project } from '../shared/types';
@@ -46,6 +47,7 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
   const [step, setStep] = useState<'method' | 'git-url'>('method');
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importingLocal, setImportingLocal] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
   const [gitBranch, setGitBranch] = useState('');
 
@@ -115,6 +117,12 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
 
       setProjectId(project.id);
       setFileMap(fileMap);
+      void trackEvent('project_connected', {
+        project_id: project.id,
+        repo_url: url,
+        branch: cloneResult.branch,
+        source: 'new_project_modal',
+      })
       onProjectCreated(project);
     } catch (err) {
       setError(getInlineError(err, 'Failed to import repository.'));
@@ -122,6 +130,73 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
       setImporting(false);
     }
   };
+
+  const handleImportLocalSmokeTest = async () => {
+    if (!profile?.id) {
+      setError('You must be logged in to import a project.');
+      return;
+    }
+
+    setImportingLocal(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/local/load-project')
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error || 'Failed to load local smoke test project.')
+      }
+
+      const payload = await response.json() as {
+        path: string
+        name: string
+        files: Record<string, string>
+      }
+
+      const fileMap = new Map(Object.entries(payload.files))
+      const projectName = payload.name || 'refract-test-project'
+
+      let project: Project
+      try {
+        project = await createProject(
+          {
+            name: projectName,
+            path: payload.path,
+            repo: null,
+            branch: 'main',
+            status: 'Not analysed',
+            last_run: null,
+          },
+          profile.id
+        )
+      } catch (persistError) {
+        console.warn('Failed to persist local smoke test project in Supabase, using local fallback.', persistError)
+        project = {
+          id: `local-${Date.now()}`,
+          name: projectName,
+          path: payload.path,
+          repo: null,
+          branch: 'main',
+          status: 'Not analysed',
+          last_run: null,
+        }
+      }
+
+      setProjectId(project.id)
+      setFileMap(fileMap)
+      void trackEvent('project_connected', {
+        project_id: project.id,
+        source: 'local_smoke_test',
+        project_path: payload.path,
+      })
+
+      onProjectCreated(project)
+    } catch (err) {
+      setError(getInlineError(err, 'Failed to load local smoke test project.'))
+    } finally {
+      setImportingLocal(false)
+    }
+  }
 
   const isBusy = importing;
 
@@ -239,7 +314,7 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
           )}
 
           {step === 'method' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
               <div
                 role="button"
                 tabIndex={0}
@@ -370,6 +445,66 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
                   </p>
                   <p style={{ fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.4 }}>
                     Paste a public Git URL, or a private GitHub URL after connecting the app
+                  </p>
+                </div>
+              </div>
+
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={handleImportLocalSmokeTest}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    handleImportLocalSmokeTest();
+                  }
+                }}
+                className="card"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 24,
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  background: 'var(--surface-card)',
+                  border: '1px solid var(--hairline)',
+                  borderRadius: '12px',
+                  gap: 12,
+                  transition: 'transform 0.2s, border-color 0.2s',
+                  opacity: importing || importingLocal ? 0.7 : 1,
+                  pointerEvents: importing || importingLocal ? 'none' : 'auto',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--ink)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--hairline)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: '8px',
+                    background: 'var(--canvas-soft)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: 'var(--ink)',
+                  }}
+                >
+                  {importingLocal ? <Loader2 size={24} className="spin" /> : <FolderOpen size={24} />}
+                </div>
+                <div>
+                  <p
+                    style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}
+                  >
+                    Local smoke test
+                  </p>
+                  <p style={{ fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.4 }}>
+                    Load /tmp/refract-test-project and run the analyzer without GitHub
                   </p>
                 </div>
               </div>

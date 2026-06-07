@@ -12,6 +12,7 @@ import type { Phase, Decision } from './types'
 import { getProject, saveDecision, getDecisionHistory, getSetting, persistProjectHealth } from '../../lib/db'
 import { explainIssue, explainCode, generateBriefing, RateLimitError, cloneGitHubRepo, validateProposalSafety, createGitHubPullRequest } from '../../lib/api'
 import { useFiles } from '../../context/FilesContext'
+import { trackEvent } from '../../lib/analytics'
 import type { TransformProposal, SafetyResult } from '../../engine/types'
 import { generateReport } from '../../lib/report'
 import { CodeMap } from './CodeMap'
@@ -706,6 +707,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [activeTab, setActiveTab] = useState<'issues' | 'map'>('issues')
   const [creatingPR, setCreatingPR] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
+  const autoRunSmokeTestRef = useRef<string | null>(null)
 
   const persistProjectAnalysis = async (summary: AnalysisResult['summary']) => {
     if (!project?.id || project.id.startsWith('local-')) return
@@ -717,6 +719,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       console.error('Failed to persist project analysis health:', err)
     }
   }
+
+  const computeScore = (summary: AnalysisResult['summary']) =>
+    Math.max(0, Math.min(100, 100 - (summary.high * 10) - (summary.medium * 4) - (summary.low * 1)))
 
   // Derived
   const allIssues = result?.issues ?? []
@@ -836,6 +841,18 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     }
     load()
   }, [projectId, loadFilesForProject])
+
+  useEffect(() => {
+    if (!project?.id) return
+    if (project.path !== '/tmp/refract-test-project') return
+    if (phase !== 'idle') return
+    if (result) return
+    if (fileMap.size === 0) return
+    if (autoRunSmokeTestRef.current === project.id) return
+
+    autoRunSmokeTestRef.current = project.id
+    void runAnalysis()
+  }, [project?.id, project?.path, phase, result, fileMap.size])
 
   // Worker lifecycle
   useEffect(() => {
@@ -1051,6 +1068,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           const nextMap = batchApply(fileMap, proposals)
 
           setFileMap(nextMap)
+          void trackEvent('refract_applied', {
+            project_id: project?.id,
+            changes_count: proposals.length,
+            mode: 'bulk',
+          })
           setRefactorProposals([])
           setPhase('complete')
           setLoadingRefactor(false)
@@ -1102,6 +1124,13 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     applyProposalToFileMap(proposal)
     setRefactorProposals((current) => current.filter((entry) => entry.id !== proposal.id))
 
+    void trackEvent('refract_applied', {
+      project_id: project?.id,
+      proposal_id: proposal.id,
+      file_path: proposal.filePath,
+      mode: 'single',
+    })
+
     await persistRefactorDecision(proposal, 'accepted', 1)
   }
 
@@ -1147,6 +1176,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         headBranch: branchName,
         title,
         body,
+        projectId: project.id,
         changes,
       })
 
@@ -1195,6 +1225,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   // Run analysis via Web Worker
   const runAnalysis = async () => {
     if (!project?.path || !workerRef.current) return
+    void trackEvent('analysis_started', {
+      project_id: project.id,
+      file_count: fileMap.size,
+      trigger: 'project_view',
+    })
     setPhase('analysing')
     setDecisions({})
     setScannedFiles([])
@@ -1222,6 +1257,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         const analysisResult: AnalysisResult = e.data.result
         setActiveFile(null)
         setResult(analysisResult)
+
+        void trackEvent('analysis_completed', {
+          project_id: project.id,
+          score: computeScore(analysisResult.summary),
+          issues_count: analysisResult.summary.total,
+        })
 
         await persistProjectAnalysis(analysisResult.summary)
 

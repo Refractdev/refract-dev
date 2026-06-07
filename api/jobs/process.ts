@@ -10,6 +10,7 @@ import { throwIfDbError } from '../_lib/db'
 import { runAnalysis } from '../../src/lib/analyze'
 import { analyzeDrift, type SnapshotData } from '../_lib/drift'
 import { cloneRepo } from '../_lib/clone'
+import { trackEvent } from '../../src/lib/analytics'
 
 // ─── Sync helpers ─────────────────────────────────────────────────────────────
 
@@ -50,6 +51,13 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
 
         const files = await cloneRepo(repoUrl, token, event.branch ?? undefined)
         console.log(`[jobs/process] Cloned ${Object.keys(files).length} files from ${repoUrl}`)
+
+        void trackEvent('analysis_started', {
+          project_id: event.project_id,
+          repo_url: repoUrl,
+          branch: event.branch ?? 'main',
+          trigger: 'jobs_process',
+        })
 
         const fileMap = new Map(Object.entries(files))
         const result = await runAnalysis(fileMap)
@@ -105,6 +113,12 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
           })
           .eq('id', event.project_id)
         throwIfDbError(projectUpdateError, '[jobs/process] Failed to update project status')
+
+        void trackEvent('analysis_completed', {
+          project_id: event.project_id,
+          score,
+          issues_count: result.summary.total,
+        })
 
         if (event.event_type === 'pull_request' && event.pr_number && event.project_id) {
           const { data: project, error: projectError } = await supabase

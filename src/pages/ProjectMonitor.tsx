@@ -147,6 +147,7 @@ export const ProjectMonitor: React.FC<Props> = ({ projectId, onBack, onOpenProje
   }, [projectId, profile?.id])
 
   useEffect(() => {
+    if (mockMode) return
     if (initialProjectData) {
       setProject(initialProjectData as Project)
       setSnapshots(initialProjectData.snapshots ?? [])

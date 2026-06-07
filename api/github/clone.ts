@@ -1,3 +1,4 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
 import path from 'path';
 import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/node';
@@ -43,7 +44,7 @@ async function getFilesFromGit(fs: any): Promise<Record<string, string>> {
   return files;
 }
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

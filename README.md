@@ -199,6 +199,31 @@ For self-hosted deployments, see the `docs/` directory for infrastructure setup,
 - Upstash Redis (for rate limiting)
 - Vercel or Node.js hosting
 
+## Deploy
+
+[![Deploy to Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fluma-founder1%2Frefract-ia)
+
+Required environment variables:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `GITHUB_APP_ID`
+- `GITHUB_APP_PRIVATE_KEY`
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+
+Recommended for the full experience:
+- `VITE_POSTHOG_KEY`
+- `VITE_POSTHOG_HOST`
+- `GITHUB_WEBHOOK_SECRET`
+- `GROQ_API_KEY`
+- `HUGGINGFACE_API_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` - obligatory for the serverless functions
+
+GitHub App setup:
+- Create or reuse a GitHub App and install it on the repositories you want to analyze.
+- Set the GitHub App credentials in Vercel so the serverless functions can mint installation tokens and open PRs.
+- If you use webhooks, set `GITHUB_WEBHOOK_SECRET` to the same secret configured in GitHub.
+
 ### Configuration
 
 Key environment variables (see `.env.example`):

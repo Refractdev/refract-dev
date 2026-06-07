@@ -1,29 +1,32 @@
 import { getAuthenticatedUser } from '../_lib/auth'
 import { githubRequest, parseGitHubRepoUrl } from '../_lib/github'
+import { trackEvent } from '../../src/lib/analytics'
+import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 interface PullRequestChange {
   filePath: string
   newContent: string
 }
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
   try {
-    const { githubToken } = await getAuthenticatedUser(req.headers.authorization)
+    const { user, githubToken } = await getAuthenticatedUser(req.headers.authorization)
 
     if (!githubToken) {
       return res.status(400).json({ error: 'GitHub account not connected' })
     }
 
-    const { repoUrl, baseBranch, headBranch, title, body, changes } = req.body as {
+    const { repoUrl, baseBranch, headBranch, title, body, projectId, changes } = req.body as {
       repoUrl?: string
       baseBranch?: string
       headBranch?: string
       title?: string
       body?: string
+      projectId?: string
       changes?: PullRequestChange[]
     }
 
@@ -98,6 +101,11 @@ export default async function handler(req: any, res: any) {
         head: headBranch,
         base: baseBranch,
       }),
+    })
+
+    void trackEvent('pr_created', {
+      project_id: projectId,
+      user_id: user.id,
     })
 
     return res.status(200).json({ url: pullRequest.html_url })

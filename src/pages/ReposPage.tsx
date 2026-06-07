@@ -22,6 +22,7 @@ import {
 } from '../lib/api'
 import { useFiles } from '../context/FilesContext'
 import { useAuth } from '../lib/AuthContext'
+import { trackEvent } from '../lib/analytics'
 import { supabase } from '../lib/supabase'
 import type { Project } from '../shared/types'
 
@@ -183,6 +184,12 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
 
       setProjectId(project.id)
       setFileMap(fileMap)
+      void trackEvent('project_connected', {
+        project_id: project.id,
+        repo_url: branchModal.repo.html_url,
+        branch: cloneResult.branch,
+        source: 'github_repos',
+      })
       setBranchModal(null)
       onNavigate('project-view', { projectId: project.id })
     } catch (err) {

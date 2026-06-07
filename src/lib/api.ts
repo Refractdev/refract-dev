@@ -40,6 +40,7 @@ export interface GitHubPullRequestInput {
   headBranch: string
   title: string
   body: string
+  projectId?: string
   changes: Array<{
     filePath: string
     newContent: string

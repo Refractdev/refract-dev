@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { Session } from '@supabase/supabase-js'
 import { supabase, UserProfile } from './supabase'
+import { buildGitHubAppInstallUrl } from './githubApp'
+import { identifyUser, resetUser } from './analytics'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const identifiedUserId = useRef<string | null>(null)
 
   const loadingDone = useRef(false)
   const doneLoading = useCallback(() => {
@@ -43,6 +46,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loadingDone.current = true
       setLoading(false)
     }
+  }, [])
+
+  const syncAnalyticsIdentity = useCallback(async (userId: string, traits: Record<string, unknown> = {}) => {
+    if (identifiedUserId.current === userId) return
+    identifiedUserId.current = userId
+    await identifyUser(userId, traits)
   }, [])
 
   const syncGitHubInstallationFromUrl = useCallback(async (userId: string, currentProfile: UserProfile): Promise<UserProfile> => {
@@ -153,18 +162,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut()
+    identifiedUserId.current = null
+    void resetUser()
     setSession(null)
     setProfile(null)
   }, [])
 
   const signIn = useCallback(async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (!error && data.session?.user?.id) {
+        void syncAnalyticsIdentity(data.session.user.id, {
+          email: data.session.user.email ?? email,
+        })
+      }
       return { error: error ?? null }
     } catch (err) {
       return { error: err instanceof Error ? err : new Error('Sign in failed') }
     }
-  }, [])
+  }, [syncAnalyticsIdentity])
 
   const signUp = useCallback(async (email: string, password: string) => {
     try {
@@ -204,7 +220,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .replace(/\//g, '_')
       .replace(/=+$/g, '')
 
-    const url = `https://github.com/apps/refractcode/installations/new?state=${encodeURIComponent(state)}`
+    const url = buildGitHubAppInstallUrl(state)
     window.location.href = url
   }, [])
 
@@ -231,6 +247,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(currentSession)
 
         if (currentSession?.user?.id) {
+          void syncAnalyticsIdentity(currentSession.user.id, {
+            email: currentSession.user.email ?? undefined,
+          })
           loadProfileAsync(currentSession)
         } else {
           setProfile(null)
@@ -250,6 +269,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(s)
 
       if (s?.user?.id) {
+        void syncAnalyticsIdentity(s.user.id, {
+          email: s.user.email ?? undefined,
+        })
         loadProfileAsync(s)
       } else {
         setProfile(null)
@@ -273,7 +295,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       subscription.unsubscribe()
       clearTimeout(fallback)
     }
-  }, [ensureProfileForSession])
+  }, [ensureProfileForSession, syncAnalyticsIdentity])
 
   return (
     <AuthContext.Provider value={{ session, profile, loading, refreshProfile, signOut, signIn, signUp, installGitHubApp }}>
