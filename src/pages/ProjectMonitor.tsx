@@ -4,7 +4,7 @@ import {
   Clock, GitBranch, Copy, CopyCheck, Loader2,
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
-import { getHealthSnapshots, getProject } from '../lib/db'
+import { getHealthSnapshots, getProject, HARDCODED_PROJECT } from '../lib/db'
 import { fetchDriftReport, fetchProjectCommits, type DriftReport, type GitHubCommit } from '../lib/api'
 import { isMockMode, MOCK_PROJECT, MOCK_SNAPSHOTS, MOCK_DRIFT_REPORT, MOCK_COMMITS, MOCK_LAST_SNAPSHOT, MOCK_PREV_SNAPSHOT } from '../lib/mockData'
 import { HealthTrendChart } from '../components/HealthTrendChart'
@@ -15,6 +15,105 @@ import { useTranslation } from '../hooks/useTranslation'
 import { getScoreColor, getDelta, C } from '../lib/health'
 import type { HealthSnapshot } from '../lib/health'
 import type { Project } from '../shared/types'
+
+// ─── Hardcoded data for refract-test-project (offline demo) ──────────────────
+
+const TEST_PROJECT_ID = HARDCODED_PROJECT.id
+
+const _daysAgo = (d: number) =>
+  new Date(new Date('2026-06-07T12:00:00.000Z').getTime() - d * 24 * 60 * 60 * 1000).toISOString()
+
+const TEST_SNAPSHOTS: HealthSnapshot[] = [
+  { score: 45, timestamp: _daysAgo(10), issueCount: 68, high: 6, medium: 20, low: 36 },
+  { score: 52, timestamp: _daysAgo(7),  issueCount: 55, high: 5, medium: 17, low: 28 },
+  { score: 60, timestamp: _daysAgo(5),  issueCount: 48, high: 4, medium: 14, low: 26 },
+  { score: 66, timestamp: _daysAgo(3),  issueCount: 44, high: 3, medium: 12, low: 22 },
+  { score: 78, timestamp: _daysAgo(0),  issueCount: 28, high: 1, medium: 5,  low: 18 },
+]
+
+const TEST_LAST_SNAPSHOT = TEST_SNAPSHOTS[TEST_SNAPSHOTS.length - 1]
+const TEST_PREV_SNAPSHOT = TEST_SNAPSHOTS[TEST_SNAPSHOTS.length - 2]
+
+const TEST_DRIFT_REPORT: DriftReport = {
+  projectId: TEST_PROJECT_ID,
+  totalSnapshots: 5,
+  currentScore: 78,
+  previousScore: 66,
+  scoreDelta: 12,
+  trends: [
+    { category: 'any-type',          slope: -1.2, direction: 'improving',  currentCount: 6,  averageCount: 12.4 },
+    { category: 'dead-state',        slope: -0.8, direction: 'improving',  currentCount: 2,  averageCount: 5.6  },
+    { category: 'prop-drilling',     slope: 0.2,  direction: 'stable',     currentCount: 4,  averageCount: 3.8  },
+    { category: 'api-in-component',  slope: 1.6,  direction: 'worsening',  currentCount: 5,  averageCount: 2.4  },
+    { category: 'unused-import',     slope: 0.9,  direction: 'worsening',  currentCount: 8,  averageCount: 5.2  },
+    { category: 'code-duplication',  slope: 0.0,  direction: 'stable',     currentCount: 3,  averageCount: 3.0  },
+  ],
+  anomalies: [
+    {
+      category: 'api-in-component',
+      type: 'spike',
+      currentCount: 5,
+      expectedCount: 2,
+      deviationPercent: 150,
+      severity: 'warning',
+    },
+    {
+      category: 'unused-import',
+      type: 'spike',
+      currentCount: 8,
+      expectedCount: 4,
+      deviationPercent: 100,
+      severity: 'critical',
+    },
+  ],
+  decayHotspots: [
+    {
+      filePath: 'src/pages/Dashboard.tsx',
+      fileName: 'Dashboard.tsx',
+      appearances: 5,
+      latestCount: 332,
+      growthRate: 4.8,
+      severity: 'critical',
+    },
+    {
+      filePath: 'src/pages/Checkout.tsx',
+      fileName: 'Checkout.tsx',
+      appearances: 3,
+      latestCount: 120,
+      growthRate: 2.1,
+      severity: 'warning',
+    },
+  ],
+  alerts: [
+    {
+      alert_type: 'score_drop',
+      severity: 'info',
+      message: 'Health score improved by +12 in the latest analysis (66 → 78).',
+      metadata: { before: 66, after: 78, delta: 12 },
+    },
+    {
+      alert_type: 'category_spike',
+      severity: 'warning',
+      message: 'api-in-component spiked — 5 direct fetch() calls detected inside components.',
+      metadata: { category: 'api-in-component', delta: 3, before: 2, after: 5 },
+    },
+    {
+      alert_type: 'decay_hotspot',
+      severity: 'critical',
+      message: 'Dashboard.tsx has grown to 332 lines with 6× any usages — maintenance hotspot.',
+      metadata: { filePath: 'src/pages/Dashboard.tsx', lines: 332 },
+    },
+  ],
+}
+
+const TEST_COMMITS: GitHubCommit[] = [
+  { sha: 'f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f901', message: 'refactor: extract ProductCard sub-components', author: 'Tiago', date: _daysAgo(0), url: '#' },
+  { sha: 'e2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90123', message: 'fix: remove dead state in Checkout', author: 'Ana', date: _daysAgo(1), url: '#' },
+  { sha: 'd3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9012345', message: 'chore: clean up unused imports in App.tsx', author: 'Marta', date: _daysAgo(3), url: '#' },
+  { sha: 'c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f901234567', message: 'feat: add error boundary to Dashboard', author: 'João', date: _daysAgo(5), url: '#' },
+  { sha: 'b5e6f7a8b9c0d1e2f3a4b5c6d7e8f90123456789', message: 'fix: prop drilling in ProductCard → use context', author: 'Tiago', date: _daysAgo(7), url: '#' },
+  { sha: 'a6f7a8b9c0d1e2f3a4b5c6d7e8f9012345678901', message: 'refactor: consolidate formatCurrency into utils', author: 'Ana', date: _daysAgo(10), url: '#' },
+]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -77,29 +176,35 @@ export const ProjectMonitor: React.FC<Props> = ({ projectId, onBack, onOpenProje
   const { t, lang } = useTranslation()
   const [mockMode, setMockMode] = useState(isMockMode())
 
+  // Detect hardcoded test project — everything is offline
+  const isTestProject = projectId === TEST_PROJECT_ID
+
   // Update mockMode when URL changes
   useEffect(() => {
     setMockMode(isMockMode())
   }, [window.location.search])
 
-  const init = mockMode ? MOCK_PROJECT : (initialProjectData ?? {})
+  const init = isTestProject ? HARDCODED_PROJECT : mockMode ? MOCK_PROJECT : (initialProjectData ?? {})
 
   const [project, setProject] = useState<Project | null>(init as Project)
   const [snapshots, setSnapshots] = useState<HealthSnapshot[]>(
-    mockMode ? MOCK_SNAPSHOTS : (initialProjectData?.snapshots ?? [])
+    isTestProject ? TEST_SNAPSHOTS : mockMode ? MOCK_SNAPSHOTS : (initialProjectData?.snapshots ?? [])
   )
   const [lastSnapshot, setLastSnapshot] = useState<HealthSnapshot | undefined>(
-    mockMode ? MOCK_LAST_SNAPSHOT : (initialProjectData?.lastSnapshot ?? undefined)
+    isTestProject ? TEST_LAST_SNAPSHOT : mockMode ? MOCK_LAST_SNAPSHOT : (initialProjectData?.lastSnapshot ?? undefined)
   )
   const [prevSnapshot, setPrevSnapshot] = useState<HealthSnapshot | undefined>(
-    mockMode ? MOCK_PREV_SNAPSHOT : (initialProjectData?.prevSnapshot ?? undefined)
+    isTestProject ? TEST_PREV_SNAPSHOT : mockMode ? MOCK_PREV_SNAPSHOT : (initialProjectData?.prevSnapshot ?? undefined)
   )
-  const [driftReport, setDriftReport] = useState<DriftReport | null>(mockMode ? MOCK_DRIFT_REPORT : null)
-  const [commits, setCommits] = useState<GitHubCommit[]>(mockMode ? MOCK_COMMITS : [])
-  const [driftLoading, setDriftLoading] = useState(!mockMode)
+  const [driftReport, setDriftReport] = useState<DriftReport | null>(isTestProject ? TEST_DRIFT_REPORT : mockMode ? MOCK_DRIFT_REPORT : null)
+  const [commits, setCommits] = useState<GitHubCommit[]>(isTestProject ? TEST_COMMITS : mockMode ? MOCK_COMMITS : [])
+  const [driftLoading, setDriftLoading] = useState(!mockMode && !isTestProject)
   const [copiedSha, setCopiedSha] = useState<string | null>(null)
 
    useEffect(() => {
+     // Hardcoded test project — data already set in initial state, skip all loading
+     if (isTestProject) return
+
      const profileId = profile?.id
      if (mockMode) { /* handled inside load() */ }
      else if (!profileId || !projectId) return

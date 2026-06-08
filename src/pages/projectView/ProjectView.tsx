@@ -842,9 +842,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     load()
   }, [projectId, loadFilesForProject])
 
+  // Auto-run analysis when files are loaded and no result exists yet.
+  // Covers both the smoke-test project and any GitHub-cloned project.
   useEffect(() => {
     if (!project?.id) return
-    if (project.path !== '/tmp/refract-test-project') return
     if (phase !== 'idle') return
     if (result) return
     if (fileMap.size === 0) return
@@ -852,7 +853,33 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
     autoRunSmokeTestRef.current = project.id
     void runAnalysis()
-  }, [project?.id, project?.path, phase, result, fileMap.size])
+  }, [project?.id, phase, result, fileMap.size])
+
+  // Auto-clone GitHub repos whose files are not in IndexedDB yet.
+  // Runs once per project when fileMap is empty and a repo URL is available.
+  const autoCloneAttemptedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!project?.id) return
+    if (!project.repo) return
+    if (fileMap.size > 0) return
+    if (recloning) return
+    if (autoCloneAttemptedRef.current === project.id) return
+
+    autoCloneAttemptedRef.current = project.id
+    setRecloning(true)
+    setRecloneError(null)
+    cloneGitHubRepo(project.repo, project.branch ?? 'main')
+      .then((cloneResult) => {
+        setFileMap(new Map(Object.entries(cloneResult.files)))
+      })
+      .catch((err) => {
+        console.error('[ProjectView] Auto-clone failed:', err)
+        setRecloneError(err instanceof Error ? err.message : 'Failed to load repository files.')
+      })
+      .finally(() => {
+        setRecloning(false)
+      })
+  }, [project?.id, project?.repo, project?.branch, fileMap.size, recloning])
 
   // Worker lifecycle
   useEffect(() => {
@@ -1225,6 +1252,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   // Run analysis via Web Worker
   const runAnalysis = async () => {
     if (!project?.path || !workerRef.current) return
+    if (fileMap.size === 0) return
     void trackEvent('analysis_started', {
       project_id: project.id,
       file_count: fileMap.size,
@@ -1674,6 +1702,18 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   }
 
   if (project && fileMap.size === 0) {
+    // Still auto-cloning — show a loading state instead of the error screen
+    if (recloning) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: C.bg, gap: 16 }}>
+          <Loader2 size={32} color={C.muted} className="animate-spin" />
+          <p style={{ fontSize: 14, color: C.muted }}>
+            {lang === 'pt' ? 'A carregar repositório...' : 'Loading repository…'}
+          </p>
+        </div>
+      )
+    }
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: C.bg, gap: 20, padding: 24 }}>
         <style>{`@keyframes spin { to { transform: rotate(360deg) } } .spin { animation: spin 1s linear infinite; }`}</style>
