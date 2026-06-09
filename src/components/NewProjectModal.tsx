@@ -141,7 +141,7 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
     setError(null);
 
     try {
-      const response = await fetch('/api/local/load-project')
+      const response = await fetch('/api/util?action=load-project')
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}))
         throw new Error(payload.error || 'Failed to load local smoke test project.')

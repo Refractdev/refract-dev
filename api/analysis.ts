@@ -1,20 +1,51 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getAdminSupabaseClient } from '../_lib/supabase'
-import { runAnalysis } from '../../src/lib/analyze'
-import { analyzeDrift, type SnapshotData } from '../_lib/drift'
-import { getAuthenticatedUser } from '../_lib/auth'
-import { throwIfDbError } from '../_lib/db'
-import { trackEvent } from '../../src/lib/analytics'
+import { getAdminSupabaseClient } from './_lib/supabase'
+import { getAuthenticatedUser } from './_lib/auth'
+import { analyzeDrift, type SnapshotData } from './_lib/drift'
+import { runAnalysis } from '../src/lib/analyze'
+import { throwIfDbError } from './_lib/db'
+import { trackEvent } from '../src/lib/analytics'
+import { cloneRepo } from './_lib/clone'
 
-import { cloneRepo } from '../_lib/clone'
+async function handleGet(req: VercelRequest, res: VercelResponse) {
+  try {
+    // Authenticate
+    try {
+      await getAuthenticatedUser(req.headers.authorization)
+    } catch {
+      return res.status(401).json({ error: 'Autenticação necessária' })
+    }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
+    const projectId = req.query.projectId as string
+    if (!projectId) {
+      return res.status(400).json({ error: 'Missing projectId query param' })
+    }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
+    const supabase = getAdminSupabaseClient()
+
+    // Load recent analysis results (max 20)
+    const { data: results, error } = await supabase
+      .from('analysis_results')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    if (error) {
+      return res.status(500).json({ error: error.message })
+    }
+
+    const snapshots = (results ?? []) as SnapshotData[]
+    const report = analyzeDrift(snapshots, projectId)
+
+    return res.status(200).json(report)
+  } catch (error: any) {
+    console.error('[analysis/drift] Error:', error)
+    return res.status(500).json({ error: error.message ?? 'Drift analysis failed' })
   }
+}
 
+async function handlePost(req: VercelRequest, res: VercelResponse) {
   try {
     // ── Authenticate ────────────────────────────────────────────────────────
     let githubToken: string | null = null
@@ -77,8 +108,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // ── Save to database ────────────────────────────────────────────────────
-    // supabase already declared above
-
     // Save health snapshot
     const score = Math.max(0, Math.min(100,
       100 - (result.summary.high * 10) - (result.summary.medium * 4) - (result.summary.low * 1)
@@ -186,5 +215,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (error: any) {
     console.error('[analysis/run] Error:', error)
     return res.status(500).json({ error: error.message ?? 'Analysis failed' })
+  }
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method === 'GET') {
+    return handleGet(req, res)
+  } else if (req.method === 'POST') {
+    return handlePost(req, res)
+  } else {
+    return res.status(405).json({ error: 'Method not allowed' })
   }
 }

@@ -81,7 +81,7 @@ async function readResponse<T>(response: Response, fallbackMessage: string): Pro
 export async function explainIssue(issue: AnalysisIssue, fileSource: string, guidelines?: string): Promise<string> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch('/api/ai/explain', {
+  const response = await fetch('/api/ai?action=explain', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -101,7 +101,7 @@ export async function generateCommitMessage(
 ): Promise<string> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch('/api/ai/refactor', {
+  const response = await fetch('/api/ai?action=refactor', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -123,7 +123,7 @@ export async function generateBriefing(
 ): Promise<string> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch('/api/ai/briefing', {
+  const response = await fetch('/api/ai?action=briefing', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -139,7 +139,7 @@ export async function generateBriefing(
 export async function explainCode(filePath: string, code: string, context?: { dependencies?: string[]; issues?: number; category?: string }): Promise<string> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch('/api/ai/explain-code', {
+  const response = await fetch('/api/ai?action=explain-code', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -155,7 +155,7 @@ export async function explainCode(filePath: string, code: string, context?: { de
 export async function suggestRefactorName(input: RefactorNameRequest): Promise<string> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch('/api/ai/name', {
+  const response = await fetch('/api/ai?action=name', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -209,7 +209,7 @@ export interface DriftReport {
 
 export async function fetchDriftReport(projectId: string): Promise<DriftReport> {
   const accessToken = await getAccessToken()
-  const response = await fetch(`/api/analysis/drift?projectId=${encodeURIComponent(projectId)}`, {
+  const response = await fetch(`/api/analysis?projectId=${encodeURIComponent(projectId)}`, {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
     },
@@ -230,7 +230,7 @@ export interface GitHubCommit {
 export async function fetchProjectCommits(repoUrl: string | null | undefined): Promise<GitHubCommit[]> {
   if (!repoUrl) return []
   const accessToken = await getAccessToken()
-  const response = await fetch(`/api/github/commits?repoUrl=${encodeURIComponent(repoUrl)}`, {
+  const response = await fetch(`/api/github?action=commits&repoUrl=${encodeURIComponent(repoUrl)}`, {
     headers: { 'Authorization': `Bearer ${accessToken}` },
   })
   if (!response.ok) return []
@@ -248,7 +248,7 @@ export async function getProjectDependencies(projectPath: string): Promise<{ dep
 export async function getGitHubRepos(): Promise<GitHubRepo[]> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch('/api/github/repos', {
+  const response = await fetch('/api/github?action=repos', {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
     },
@@ -260,7 +260,7 @@ export async function getGitHubRepos(): Promise<GitHubRepo[]> {
 export async function getGitHubBranches(repoUrl: string): Promise<{ branches: GitHubBranch[] }> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch(`/api/github/branches?repoUrl=${encodeURIComponent(repoUrl)}`, {
+  const response = await fetch(`/api/github?action=branches&repoUrl=${encodeURIComponent(repoUrl)}`, {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
     },
@@ -272,7 +272,7 @@ export async function getGitHubBranches(repoUrl: string): Promise<{ branches: Gi
 export async function cloneGitHubRepo(repoUrl: string, branch?: string): Promise<GitHubCloneResult> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch('/api/github/clone', {
+  const response = await fetch('/api/github?action=clone', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -287,7 +287,7 @@ export async function cloneGitHubRepo(repoUrl: string, branch?: string): Promise
 export async function createGitHubPullRequest(input: GitHubPullRequestInput): Promise<{ url: string }> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch('/api/github/pr', {
+  const response = await fetch('/api/github?action=pr', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -312,7 +312,7 @@ export interface ValidateProposalInput {
 export async function validateProposalSafety(input: ValidateProposalInput): Promise<SafetyResult> {
   const accessToken = await getAccessToken()
 
-  const response = await fetch('/api/safety/validate', {
+  const response = await fetch('/api/safety', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

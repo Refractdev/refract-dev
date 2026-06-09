@@ -32,7 +32,7 @@
     }
   ],
   "functions": {
-    "api/ai/*.ts": {
+    "api/ai.ts": {
       "maxDuration": 30
     },
     "api/github/webhook.ts": {
@@ -41,7 +41,7 @@
     "api/jobs/process.ts": {
       "maxDuration": 120
     },
-    "api/analysis/*.ts": {
+    "api/analysis.ts": {
       "maxDuration": 60
     }
   },

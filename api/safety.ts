@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { exec } from 'child_process'
 import ts from 'typescript'
-import { getAuthenticatedUserWithOptionalGitHub } from '../_lib/auth'
+import { getAuthenticatedUserWithOptionalGitHub } from './_lib/auth'
 
 interface NewFile {
   path: string
