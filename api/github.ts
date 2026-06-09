@@ -214,7 +214,9 @@ async function handleCommits(req: VercelRequest, res: VercelResponse) {
 
 async function handleRepos(req: VercelRequest, res: VercelResponse) {
   try {
-    const { githubToken } = await getAuthenticatedUser(req.headers.authorization)
+    const { githubToken, installationId } = await getAuthenticatedUser(req.headers.authorization)
+
+    console.log(`[github/repos] Fetching repos for installationId: ${installationId}`)
 
     // Installation token só acede aos repos onde a App foi instalada
     const repos = await githubRequest<any[]>(
@@ -225,9 +227,11 @@ async function handleRepos(req: VercelRequest, res: VercelResponse) {
     // GitHub App endpoint retorna { repositories: [...] }
     const list = (repos as any).repositories ?? repos
 
+    console.log(`[github/repos] Returned ${list.length} repositories`)
     return res.status(200).json(list)
   } catch (err: any) {
     const isNotInstalled = err.message === 'GitHub App not installed'
+    console.error('[github/repos] Error:', err.message, err.stack)
     return res.status(isNotInstalled ? 403 : 500).json({
       error: err.message ?? 'Failed to fetch repos',
       detail: err.stack ?? null,

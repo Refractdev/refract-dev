@@ -35,54 +35,105 @@ async function handleHealth(_req: VercelRequest, res: VercelResponse) {
   })
 }
 
-async function handleTestEnv(req: VercelRequest, res: VercelResponse) {
-  try {
-    let privateKey = process.env.GITHUB_APP_PRIVATE_KEY
-    if (!privateKey) {
-      return res.status(500).json({ error: 'GITHUB_APP_PRIVATE_KEY is not defined' })
-    }
+async function handleTestEnv(_req: VercelRequest, res: VercelResponse) {
+  const report: Record<string, any> = {}
 
-    const originalLength = privateKey.length
-    const startsWithQuote = privateKey.startsWith('"')
-    const endsWithQuote = privateKey.endsWith('"')
-
-    let keyAfterReplace = privateKey.replace(/\\n/g, '\n')
-    let keyAfterSlice = keyAfterReplace
-    if (keyAfterSlice.startsWith('"')) {
-      keyAfterSlice = keyAfterSlice.slice(1, -1)
-    }
-
-    const { createPrivateKey } = await import('node:crypto')
-    let success = false
-    let errMessage = ''
-    let pkcs8pem = ''
-    try {
-      const keyObject = createPrivateKey({ key: keyAfterSlice, format: 'pem' })
-      pkcs8pem = keyObject.export({ type: 'pkcs8', format: 'pem' }) as string
-      const { importPKCS8 } = await import('jose')
-      await importPKCS8(pkcs8pem, 'RS256')
-      success = true
-    } catch (e: any) {
-      errMessage = e.message
-    }
-
-    return res.status(200).json({
-      originalLength,
-      startsWithQuote,
-      endsWithQuote,
-      first50_orig: privateKey.substring(0, 50),
-      last50_orig: privateKey.substring(privateKey.length - 50),
-      first50_processed: keyAfterSlice.substring(0, 50),
-      last50_processed: keyAfterSlice.substring(keyAfterSlice.length - 50),
-      success,
-      errMessage,
-    })
-  } catch (err: any) {
-    return res.status(500).json({
-      error: err.message,
-      stack: err.stack,
-    })
+  // ── 1. Variáveis de ambiente presentes ──────────────────────────────────
+  const requiredEnvVars = [
+    'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY',
+    'GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY',
+    'GITHUB_WEBHOOK_SECRET',
+  ]
+  report.envVars = {}
+  for (const key of requiredEnvVars) {
+    const val = process.env[key]
+    report.envVars[key] = val
+      ? `SET (${val.length} chars, starts: ${val.substring(0, 12)}...)`
+      : 'MISSING ❌'
   }
+
+  // ── 2. Parse da chave privada ────────────────────────────────────────────
+  let privateKey = process.env.GITHUB_APP_PRIVATE_KEY ?? ''
+  privateKey = privateKey.replace(/\\n/g, '\n')
+  if (privateKey.startsWith('"')) privateKey = privateKey.slice(1, -1)
+
+  report.privateKey = {
+    processedLength: privateKey.length,
+    startsWithBeginRSA: privateKey.trimStart().startsWith('-----BEGIN RSA PRIVATE KEY-----'),
+    endsWithEndRSA: privateKey.trimEnd().endsWith('-----END RSA PRIVATE KEY-----'),
+    first40: privateKey.substring(0, 40),
+    last40: privateKey.substring(privateKey.length - 40),
+  }
+
+  let pkcs8pem = ''
+  try {
+    const { createPrivateKey } = await import('node:crypto')
+    const keyObject = createPrivateKey({ key: privateKey, format: 'pem' })
+    pkcs8pem = keyObject.export({ type: 'pkcs8', format: 'pem' }) as string
+    report.parseKey = 'OK ✅'
+  } catch (e: any) {
+    report.parseKey = `FAILED ❌ — ${e.message}`
+  }
+
+  // ── 3. Gerar App JWT ─────────────────────────────────────────────────────
+  let appJWT = ''
+  if (pkcs8pem) {
+    try {
+      const { importPKCS8, SignJWT } = await import('jose')
+      const privateKeyObj = await importPKCS8(pkcs8pem, 'RS256')
+      const appId = process.env.GITHUB_APP_ID ?? ''
+      const now = Math.floor(Date.now() / 1000)
+      appJWT = await new SignJWT({ iss: appId })
+        .setProtectedHeader({ alg: 'RS256' })
+        .setIssuedAt(now - 60)
+        .setExpirationTime(now + 540)
+        .sign(privateKeyObj)
+      report.generateJWT = 'OK ✅'
+    } catch (e: any) {
+      report.generateJWT = `FAILED ❌ — ${e.message}`
+    }
+  } else {
+    report.generateJWT = 'SKIPPED (key parse failed)'
+  }
+
+  // ── 4. Listar instalações da GitHub App ─────────────────────────────────
+  if (appJWT) {
+    try {
+      const ghRes = await fetch('https://api.github.com/app/installations', {
+        headers: {
+          Authorization: `Bearer ${appJWT}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      })
+      const ghBody = await ghRes.text()
+      if (ghRes.ok) {
+        const installations = JSON.parse(ghBody)
+        report.githubAppInstallations = {
+          status: `OK ✅ — ${installations.length} installation(s)`,
+          ids: installations.map((i: any) => ({ id: i.id, account: i.account?.login })),
+        }
+      } else {
+        report.githubAppInstallations = `FAILED ❌ — HTTP ${ghRes.status}: ${ghBody.substring(0, 200)}`
+      }
+    } catch (e: any) {
+      report.githubAppInstallations = `FAILED ❌ (network) — ${e.message}`
+    }
+  } else {
+    report.githubAppInstallations = 'SKIPPED (JWT generation failed)'
+  }
+
+  // ── 5. Supabase admin client ─────────────────────────────────────────────
+  try {
+    const { getAdminSupabaseClient } = await import('./_lib/supabase')
+    const sb = getAdminSupabaseClient()
+    const { error } = await sb.from('users').select('id').limit(1)
+    report.supabaseAdmin = error ? `FAILED ❌ — ${error.message}` : 'OK ✅'
+  } catch (e: any) {
+    report.supabaseAdmin = `FAILED ❌ — ${e.message}`
+  }
+
+  return res.status(200).json(report)
 }
 
 async function handleLoadProject(_req: VercelRequest, res: VercelResponse) {

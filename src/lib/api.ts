@@ -69,8 +69,17 @@ async function readResponse<T>(response: Response, fallbackMessage: string): Pro
   }
 
   if (!response.ok) {
-    const data = await response.json().catch(() => ({ error: fallbackMessage }))
-    throw new Error(data.message ?? data.error ?? fallbackMessage)
+    let data: any = {}
+    try {
+      data = await response.json()
+    } catch {
+      // response body não é JSON
+    }
+    // Monta uma mensagem clara com status HTTP + detalhe do servidor
+    const serverMsg = data.error ?? data.message ?? null
+    const detail = data.detail ? ` — ${String(data.detail).split('\n')[0]}` : ''
+    const label = serverMsg ? `${serverMsg}${detail}` : fallbackMessage
+    throw new Error(`[${response.status}] ${label}`)
   }
 
   return response.json() as Promise<T>
@@ -246,15 +255,47 @@ export async function getProjectDependencies(projectPath: string): Promise<{ dep
 // ─── GitHub API ─────────────────────────────────────────────────────────────
 
 export async function getGitHubRepos(): Promise<GitHubRepo[]> {
-  const accessToken = await getAccessToken()
+  let accessToken: string
+  try {
+    accessToken = await getAccessToken()
+  } catch (err: any) {
+    throw new Error(`getGitHubRepos — failed to get session token: ${err?.message}`)
+  }
 
-  const response = await fetch('/api/github?action=repos', {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-    },
-  })
+  let response: Response
+  try {
+    response = await fetch('/api/github?action=repos', {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    })
+  } catch (err: any) {
+    // Erro de rede — fetch nem chegou ao servidor
+    throw new Error(`getGitHubRepos — network error (fetch threw): ${err?.message}`)
+  }
 
-  return readResponse<GitHubRepo[]>(response, 'Failed to get GitHub repos')
+  // Sempre loga status + URL para facilitar debug no console do browser
+  console.log(`[api/getGitHubRepos] HTTP ${response.status} ${response.url}`)
+
+  if (!response.ok) {
+    let body = '<empty>'
+    try { body = await response.text() } catch { /* ignore */ }
+    console.error(`[api/getGitHubRepos] Error body:`, body)
+    let parsed: any = {}
+    try { parsed = JSON.parse(body) } catch { /* ignore */ }
+    const serverMsg = parsed.error ?? parsed.message ?? body
+    throw new Error(`[${response.status}] ${serverMsg}`)
+  }
+
+  let data: any
+  try {
+    data = await response.json()
+  } catch (err: any) {
+    throw new Error(`getGitHubRepos — response was 2xx but body is not valid JSON: ${err?.message}`)
+  }
+
+  // A API retorna um array direto ou { repositories: [...] }
+  const list: GitHubRepo[] = Array.isArray(data) ? data : (data.repositories ?? [])
+  console.log(`[api/getGitHubRepos] Parsed ${list.length} repos`)
+  return list
 }
 
 export async function getGitHubBranches(repoUrl: string): Promise<{ branches: GitHubBranch[] }> {
