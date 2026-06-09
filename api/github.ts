@@ -5,7 +5,22 @@ import http from 'isomorphic-git/http/node'
 import { Volume, createFsFromVolume } from 'memfs'
 import { getAuthenticatedUser, getAuthenticatedUserWithOptionalGitHub } from './_lib/auth'
 import { parseGitHubRepoUrl, githubRequest } from './_lib/github'
-import { trackEvent } from '../src/lib/analytics'
+// Inline analytics — avoids importing frontend (Vite) code into a Node.js function
+async function trackEvent(event: string, props: Record<string, unknown> = {}): Promise<void> {
+  try {
+    const key = process.env.VITE_POSTHOG_PROJECT_TOKEN?.trim()
+    const host = process.env.VITE_POSTHOG_HOST?.trim() || 'https://app.posthog.com'
+    if (!key) return
+    const distinctId = (props.user_id ?? props.project_id ?? `server:${event}`) as string
+    await fetch(new URL('/capture/', host).toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: key, event, distinct_id: distinctId, properties: props }),
+    })
+  } catch {
+    // analytics failure should never break the main request
+  }
+}
 
 const TEXT_FILE_PATTERN = /\.(ts|tsx|js|jsx|json|css|html|md)$/i
 const IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'coverage'])

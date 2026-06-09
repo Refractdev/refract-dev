@@ -2,25 +2,54 @@ import { getAdminSupabaseClient } from './supabase'
 
 // ─── Gerar JWT para autenticar como GitHub App ────────────────────────────────
 
-async function generateAppJWT(): Promise<string> {
-  let privateKey = process.env.GITHUB_APP_PRIVATE_KEY
-  if (!privateKey) throw new Error('[auth] GITHUB_APP_PRIVATE_KEY is not set in environment variables')
+function normalizePrivateKey(raw: string): string {
+  // 1. Remove outer quotes se existirem
+  let key = raw.trim()
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1).trim()
+  }
 
-  privateKey = privateKey.replace(/\\n/g, '\n')
-  if (privateKey.startsWith('"')) privateKey = privateKey.slice(1, -1)
+  // 2. Substitui \n literais (como string de 2 chars) por newlines reais
+  key = key.replace(/\\n/g, '\n')
+
+  // 3. Se ainda assim não tiver newlines (linha única), insere-as nos lugares corretos
+  if (!key.includes('\n')) {
+    key = key
+      .replace('-----BEGIN RSA PRIVATE KEY-----', '-----BEGIN RSA PRIVATE KEY-----\n')
+      .replace('-----END RSA PRIVATE KEY-----', '\n-----END RSA PRIVATE KEY-----')
+    // Quebra o corpo da chave em linhas de 64 chars
+    const headerEnd = key.indexOf('\n') + 1
+    const footerStart = key.lastIndexOf('\n-----END')
+    if (headerEnd > 0 && footerStart > headerEnd) {
+      const header = key.substring(0, headerEnd)
+      const body = key.substring(headerEnd, footerStart)
+      const footer = key.substring(footerStart)
+      const wrappedBody = body.match(/.{1,64}/g)?.join('\n') ?? body
+      key = header + wrappedBody + footer
+    }
+  }
+
+  return key
+}
+
+async function generateAppJWT(): Promise<string> {
+  const rawKey = process.env.GITHUB_APP_PRIVATE_KEY
+  if (!rawKey) throw new Error('[auth] GITHUB_APP_PRIVATE_KEY is not set in environment variables')
 
   const appId = process.env.GITHUB_APP_ID
   if (!appId) throw new Error('[auth] GITHUB_APP_ID is not set in environment variables')
 
-  console.log(`[auth] Generating App JWT — appId: ${appId}, keyLength: ${privateKey.length}`)
+  const privateKey = normalizePrivateKey(rawKey)
+
+  console.log(`[auth] Generating App JWT — appId: ${appId}, keyLength: ${privateKey.length}, hasNewlines: ${privateKey.includes('\n')}, startsCorrectly: ${privateKey.trimStart().startsWith('-----BEGIN')}`)
 
   let pkcs8pem: string
   try {
-    // Converter PKCS#1 (BEGIN RSA PRIVATE KEY) para PKCS#8 (BEGIN PRIVATE KEY)
     const { createPrivateKey } = await import('node:crypto')
     const keyObject = createPrivateKey({ key: privateKey, format: 'pem' })
     pkcs8pem = keyObject.export({ type: 'pkcs8', format: 'pem' }) as string
   } catch (err: any) {
+    console.error('[auth] Raw key first 100 chars:', rawKey.substring(0, 100))
     throw new Error(`[auth] Failed to parse GITHUB_APP_PRIVATE_KEY — check PEM format and line breaks. Details: ${err?.message}`)
   }
 

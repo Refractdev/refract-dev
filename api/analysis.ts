@@ -4,8 +4,24 @@ import { getAuthenticatedUser } from './_lib/auth'
 import { analyzeDrift, type SnapshotData } from './_lib/drift'
 import { runAnalysis } from '../src/lib/analyze'
 import { throwIfDbError } from './_lib/db'
-import { trackEvent } from '../src/lib/analytics'
 import { cloneRepo } from './_lib/clone'
+
+// Inline analytics — avoids importing frontend (Vite) code into a Node.js function
+async function trackEvent(event: string, props: Record<string, unknown> = {}): Promise<void> {
+  try {
+    const key = process.env.VITE_POSTHOG_PROJECT_TOKEN?.trim()
+    const host = process.env.VITE_POSTHOG_HOST?.trim() || 'https://app.posthog.com'
+    if (!key) return
+    const distinctId = (props.user_id ?? props.project_id ?? `server:${event}`) as string
+    await fetch(new URL('/capture/', host).toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: key, event, distinct_id: distinctId, properties: props }),
+    })
+  } catch {
+    // analytics failure should never break the main request
+  }
+}
 
 async function handleGet(req: VercelRequest, res: VercelResponse) {
   try {

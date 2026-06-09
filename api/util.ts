@@ -48,21 +48,42 @@ async function handleTestEnv(_req: VercelRequest, res: VercelResponse) {
   for (const key of requiredEnvVars) {
     const val = process.env[key]
     report.envVars[key] = val
-      ? `SET (${val.length} chars, starts: ${val.substring(0, 12)}...)`
+      ? `SET (${val.length} chars, starts: "${val.substring(0, 20)}...")`
       : 'MISSING ❌'
   }
 
-  // ── 2. Parse da chave privada ────────────────────────────────────────────
-  let privateKey = process.env.GITHUB_APP_PRIVATE_KEY ?? ''
+  // ── 2. Normalizar e parsear a chave privada ─────────────────────────────
+  const rawKey = process.env.GITHUB_APP_PRIVATE_KEY ?? ''
+  let privateKey = rawKey.trim()
+  if ((privateKey.startsWith('"') && privateKey.endsWith('"')) ||
+      (privateKey.startsWith("'") && privateKey.endsWith("'"))) {
+    privateKey = privateKey.slice(1, -1).trim()
+  }
   privateKey = privateKey.replace(/\\n/g, '\n')
-  if (privateKey.startsWith('"')) privateKey = privateKey.slice(1, -1)
+  if (!privateKey.includes('\n')) {
+    privateKey = privateKey
+      .replace('-----BEGIN RSA PRIVATE KEY-----', '-----BEGIN RSA PRIVATE KEY-----\n')
+      .replace('-----END RSA PRIVATE KEY-----', '\n-----END RSA PRIVATE KEY-----')
+    const headerEnd = privateKey.indexOf('\n') + 1
+    const footerStart = privateKey.lastIndexOf('\n-----END')
+    if (headerEnd > 0 && footerStart > headerEnd) {
+      const header = privateKey.substring(0, headerEnd)
+      const body = privateKey.substring(headerEnd, footerStart)
+      const footer = privateKey.substring(footerStart)
+      const wrappedBody = body.match(/.{1,64}/g)?.join('\n') ?? body
+      privateKey = header + wrappedBody + footer
+    }
+  }
 
   report.privateKey = {
+    rawLength: rawKey.length,
     processedLength: privateKey.length,
+    hasNewlines: privateKey.includes('\n'),
+    lineCount: privateKey.split('\n').length,
     startsWithBeginRSA: privateKey.trimStart().startsWith('-----BEGIN RSA PRIVATE KEY-----'),
     endsWithEndRSA: privateKey.trimEnd().endsWith('-----END RSA PRIVATE KEY-----'),
-    first40: privateKey.substring(0, 40),
-    last40: privateKey.substring(privateKey.length - 40),
+    first50: privateKey.substring(0, 50),
+    last50: privateKey.substring(Math.max(0, privateKey.length - 50)),
   }
 
   let pkcs8pem = ''
@@ -114,7 +135,7 @@ async function handleTestEnv(_req: VercelRequest, res: VercelResponse) {
           ids: installations.map((i: any) => ({ id: i.id, account: i.account?.login })),
         }
       } else {
-        report.githubAppInstallations = `FAILED ❌ — HTTP ${ghRes.status}: ${ghBody.substring(0, 200)}`
+        report.githubAppInstallations = `FAILED ❌ — HTTP ${ghRes.status}: ${ghBody.substring(0, 300)}`
       }
     } catch (e: any) {
       report.githubAppInstallations = `FAILED ❌ (network) — ${e.message}`
