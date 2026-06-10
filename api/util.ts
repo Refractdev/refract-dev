@@ -36,6 +36,10 @@ async function handleHealth(_req: VercelRequest, res: VercelResponse) {
 }
 
 async function handleTestEnv(_req: VercelRequest, res: VercelResponse) {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' })
+  }
+
   const report: Record<string, any> = {}
 
   // ── 1. Variáveis de ambiente presentes ──────────────────────────────────
@@ -56,7 +60,7 @@ async function handleTestEnv(_req: VercelRequest, res: VercelResponse) {
   const rawKey = process.env.GITHUB_APP_PRIVATE_KEY ?? ''
   let privateKey = rawKey.trim()
   if ((privateKey.startsWith('"') && privateKey.endsWith('"')) ||
-      (privateKey.startsWith("'") && privateKey.endsWith("'"))) {
+    (privateKey.startsWith("'") && privateKey.endsWith("'"))) {
     privateKey = privateKey.slice(1, -1).trim()
   }
   privateKey = privateKey.replace(/\\n/g, '\n')
@@ -158,6 +162,10 @@ async function handleTestEnv(_req: VercelRequest, res: VercelResponse) {
 }
 
 async function handleLoadProject(_req: VercelRequest, res: VercelResponse) {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' })
+  }
+
   try {
     const stats = await fs.stat(LOCAL_SMOKE_TEST_PATH)
     if (!stats.isDirectory()) {

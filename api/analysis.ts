@@ -6,6 +6,30 @@ import { runAnalysis } from '../src/lib/analyze'
 import { throwIfDbError } from './_lib/db'
 import { cloneRepo } from './_lib/clone'
 
+const ALLOWED_REPO_HOSTS = ['github.com', 'gitlab.com', 'bitbucket.org']
+
+function validateRepoUrl(repoUrl: string): string | null {
+  try {
+    const url = new URL(repoUrl)
+    if (url.protocol !== 'https:') return 'repoUrl deve usar HTTPS'
+    if (!ALLOWED_REPO_HOSTS.includes(url.hostname)) return `repoUrl hostname "${url.hostname}" não permitido (apenas github.com, gitlab.com, bitbucket.org)`
+
+    const hostname = url.hostname.toLowerCase()
+    if (
+      hostname === '127.0.0.1' ||
+      hostname === 'localhost' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('169.254.') ||
+      hostname.startsWith('127.')
+    ) return 'repoUrl não pode ser IP interno'
+
+    return null
+  } catch {
+    return 'repoUrl inválida'
+  }
+}
+
 // Inline analytics — avoids importing frontend (Vite) code into a Node.js function
 async function trackEvent(event: string, props: Record<string, unknown> = {}): Promise<void> {
   try {
@@ -97,6 +121,11 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
     if (preFetchedFiles) {
       files = preFetchedFiles
     } else if (repoUrl) {
+      const validationError = validateRepoUrl(repoUrl)
+      if (validationError) {
+        return res.status(400).json({ error: validationError })
+      }
+
       const branchName = branch ?? 'main'
       files = await cloneRepo(repoUrl, githubToken, branchName)
       console.log(`[analysis/run] Cloned ${Object.keys(files).length} files from ${repoUrl} ${branchName}`)

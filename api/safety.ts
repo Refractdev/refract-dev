@@ -49,18 +49,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Missing required parameters (filePath, before, after)' })
   }
 
-  // If the engine gate already validated (syntax + imports in-memory), skip redundant checks
-  if (engineResult?.syntaxOk) {
-    return res.status(200).json({
-      passed: true,
-      syntaxOk: true,
-      typecheck: true,
-      errors: [],
-      warnings: ['Engine gate result accepted — skipping heavy validation'],
-      details: { typecheckLogs: ['Pre-validated by engine safety gate'] },
-    })
-  }
-
   // Determine if it is a local workspace project with physical access
   let isLocal = false
   if (projectPath && fs.existsSync(projectPath)) {
@@ -157,7 +145,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Try running with findRelatedTests if Jest/Vitest detected to speed it up, else run standard test command
         const testScriptContent = packageJson.scripts.test || ''
         let testCommand = 'npm test'
-        
+
         if (testScriptContent.includes('vitest')) {
           testCommand = `npx vitest run --findRelatedTests "${absoluteFilePath}"`
         } else if (testScriptContent.includes('jest')) {
@@ -269,7 +257,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return undefined
         },
         getDefaultLibFileName: () => 'lib.d.ts',
-        writeFile: () => {},
+        writeFile: () => { },
         getCurrentDirectory: () => '/',
         getCanonicalFileName: (f) => f,
         useCaseSensitiveFileNames: () => true,
