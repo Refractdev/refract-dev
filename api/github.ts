@@ -1,387 +1,254 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import path from 'path'
-import git from 'isomorphic-git'
-import http from 'isomorphic-git/http/node'
-import { Volume, createFsFromVolume } from 'memfs'
-import { getAuthenticatedUser, getAuthenticatedUserWithOptionalGitHub } from './_lib/auth'
-import { parseGitHubRepoUrl, githubRequest } from './_lib/github'
-// Inline analytics — avoids importing frontend (Vite) code into a Node.js function
-async function trackEvent(event: string, props: Record<string, unknown> = {}): Promise<void> {
-  try {
-    const key = process.env.VITE_POSTHOG_PROJECT_TOKEN?.trim()
-    const host = process.env.VITE_POSTHOG_HOST?.trim() || 'https://app.posthog.com'
-    if (!key) return
-    const distinctId = (props.user_id ?? props.project_id ?? `server:${event}`) as string
-    await fetch(new URL('/capture/', host).toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: key, event, distinct_id: distinctId, properties: props }),
-    })
-  } catch {
-    // analytics failure should never break the main request
-  }
-}
 
-const TEXT_FILE_PATTERN = /\.(ts|tsx|js|jsx|json|css|html|md)$/i
-const IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'coverage'])
+const GITHUB_API_BASE = 'https://api.github.com'
 
-async function getFilesFromGit(fs: any): Promise<Record<string, string>> {
-  const files: Record<string, string> = {}
-
-  await git.walk({
-    fs,
-    dir: '/repo',
-    trees: [git.TREE({ ref: 'HEAD' })],
-    map: async (filepath, [entry]) => {
-      if (!entry) return null
-      const type = await entry.type()
-
-      const filename = path.basename(filepath)
-      if (IGNORE.has(filename)) return null
-
-      const parts = filepath.split('/')
-      if (parts.some((part) => IGNORE.has(part))) return null
-
-      if (type === 'tree') {
-        return filepath // recurse
-      }
-
-      if (type !== 'blob') return null
-      if (!TEXT_FILE_PATTERN.test(filename)) return null
-
-      const contentBuffer = await entry.content()
-      if (!contentBuffer) return null
-
-      const content = new TextDecoder().decode(contentBuffer)
-      files[filepath] = content
-      return filepath
+async function githubRequest(
+  token: string,
+  path: string,
+  init?: RequestInit
+): Promise<any> {
+  const response = await fetch(`${GITHUB_API_BASE}${path}`, {
+    ...init,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      Authorization: `Bearer ${token}`,
+      ...(init?.headers ?? {}),
     },
   })
 
-  return files
+  if (!response.ok) {
+    const errorPayload = await response.json().catch(() => ({}))
+    throw new Error(errorPayload.message ?? `GitHub request failed (${response.status})`)
+  }
+
+  return response.json()
 }
 
-interface PullRequestChange {
-  filePath: string
-  newContent: string
+function getToken(req: VercelRequest): string {
+  // Frontend sends github_token in X-GitHub-Token header
+  const token = req.headers['x-github-token'] as string
+  if (!token) throw new Error('Missing X-GitHub-Token header')
+  return token
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
-async function handleBranches(req: VercelRequest, res: VercelResponse) {
-  try {
-    const { githubToken } = await getAuthenticatedUser(req.headers.authorization)
-
-    if (!githubToken) {
-      return res.status(400).json({ error: 'GitHub account not connected' })
-    }
-
-    const repoUrl = Array.isArray(req.query.repoUrl) ? req.query.repoUrl[0] : req.query.repoUrl
-    if (!repoUrl) {
-      return res.status(400).json({ error: 'Missing repoUrl' })
-    }
-
-    const { owner, repo } = parseGitHubRepoUrl(repoUrl)
-    const repoMeta = await githubRequest<any>(githubToken, `/repos/${owner}/${repo}`)
-    const branches = await githubRequest<any[]>(githubToken, `/repos/${owner}/${repo}/branches?per_page=100`)
-
-    return res.status(200).json({
-      branches: branches.map((branch) => ({
-        name: branch.name,
-        isDefault: branch.name === repoMeta.default_branch,
-      })),
-    })
-  } catch (error: any) {
-    const status =
-      error.message === 'Missing authorization header' || error.message === 'Invalid session'
-        ? 401
-        : 500
-    return res.status(status).json({ error: error.message || 'Failed to load GitHub branches' })
-  }
+async function handleRepos(token: string) {
+  const data = await githubRequest(token, '/user/repos?per_page=50&sort=updated&type=all')
+  return data.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    full_name: r.full_name,
+    description: r.description,
+    private: r.private,
+    language: r.language,
+    default_branch: r.default_branch,
+    updated_at: r.updated_at,
+    html_url: r.html_url,
+  }))
 }
 
-async function handleClone(req: VercelRequest, res: VercelResponse) {
-  try {
-    const { githubToken } = await getAuthenticatedUserWithOptionalGitHub(
-      req.headers.authorization
-    )
+async function handleBranches(token: string, repoUrl: string) {
+  const { owner, repo } = parseGitHubRepoUrl(repoUrl)
+  const repoMeta = await githubRequest(token, `/repos/${owner}/${repo}`)
+  const branches = await githubRequest(token, `/repos/${owner}/${repo}/branches?per_page=100`)
+  return branches.map((b: any) => ({
+    name: b.name,
+    isDefault: b.name === repoMeta.default_branch,
+  }))
+}
 
-    const { repoUrl, branch } = req.body ?? {}
-    if (!repoUrl) {
-      return res.status(400).json({ error: 'Missing repoUrl' })
-    }
+async function handleCommits(token: string, repoUrl: string) {
+  const { owner, repo } = parseGitHubRepoUrl(repoUrl)
+  const data = await githubRequest(token, `/repos/${owner}/${repo}/commits?per_page=30`)
+  return data.map((c: any) => ({
+    sha: c.sha,
+    message: c.commit.message.split('\n')[0],
+    author: c.commit.author.name,
+    date: c.commit.author.date,
+    url: c.html_url,
+  }))
+}
 
-    // Resolve the repository URL and details
-    let normalizedRepoUrl = repoUrl.trim()
-    let isGitHub = false
-    let owner = ''
-    let repo = ''
+async function handleClone(token: string, repoUrl: string, branch?: string) {
+  const { owner, repo } = parseGitHubRepoUrl(repoUrl)
 
+  // Use GitHub Contents API — get the repo tree
+  const ref = branch || 'HEAD'
+  const treeData = await githubRequest(token, `/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`)
+  const tree = treeData.tree as Array<{ path: string; type: string; mode: string }>
+
+  const TEXT_PATTERN = /\.(ts|tsx|js|jsx|json|css|html|md)$/i
+  const IGNORE_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', 'coverage', '.cache'])
+
+  const textFiles = tree.filter((entry) => {
+    if (entry.type !== 'blob') return false
+    const parts = entry.path.split('/')
+    if (parts.some((p) => IGNORE_DIRS.has(p))) return false
+    return TEXT_PATTERN.test(entry.path)
+  }).slice(0, 200) // limit to 200 files
+
+  // Fetch each file content
+  const files: Record<string, string> = {}
+  for (const file of textFiles) {
     try {
-      const parsed = parseGitHubRepoUrl(repoUrl)
-      owner = parsed.owner
-      repo = parsed.repo
-      normalizedRepoUrl = parsed.repoUrl
-      isGitHub = true
-    } catch {
-      // Not a standard GitHub URL, keep as is
-    }
-
-    // Detect default branch if not specified
-    let branchName = branch
-    if (!branchName) {
-      try {
-        const remoteInfo = await git.getRemoteInfo({
-          http,
-          url: normalizedRepoUrl.endsWith('.git') ? normalizedRepoUrl : `${normalizedRepoUrl}.git`,
-          onAuth: githubToken
-            ? () => ({
-                username: githubToken,
-                password: 'x-oauth-basic',
-              })
-            : undefined,
-        })
-        branchName = remoteInfo.HEAD ? remoteInfo.HEAD.replace('refs/heads/', '') : 'main'
-      } catch (err) {
-        console.warn('Failed to get remote info, trying fallback options', err)
-        if (isGitHub) {
-          try {
-            const repoMeta = await githubRequest<any>(githubToken, `/repos/${owner}/${repo}`)
-            branchName = repoMeta.default_branch || 'main'
-          } catch {
-            branchName = 'main'
-          }
-        } else {
-          branchName = 'main'
-        }
+      const contentData = await githubRequest(token, `/repos/${owner}/${repo}/contents/${file.path}?ref=${ref}`)
+      if (contentData.content && contentData.encoding === 'base64') {
+        files[file.path] = Buffer.from(contentData.content, 'base64').toString('utf-8')
       }
+    } catch {
+      // skip files that fail
     }
-
-    const vol = new Volume()
-    const fs = createFsFromVolume(vol)
-
-    await git.clone({
-      fs,
-      http,
-      dir: '/repo',
-      url: normalizedRepoUrl.endsWith('.git') ? normalizedRepoUrl : `${normalizedRepoUrl}.git`,
-      ref: branchName,
-      singleBranch: true,
-      depth: 1,
-      noTags: true,
-      noCheckout: true,
-      onAuth: githubToken
-        ? () => ({
-            username: githubToken,
-            password: 'x-oauth-basic',
-          })
-        : undefined,
-    })
-
-    const files = await getFilesFromGit(fs)
-
-    return res.status(200).json({
-      files,
-      branch: branchName,
-    })
-  } catch (error: any) {
-    const status =
-      error.message === 'Missing authorization header' || error.message === 'Invalid session'
-        ? 401
-        : 500
-    return res.status(status).json({ error: error.message || 'Failed to clone repository' })
   }
+
+  // Also try to detect the default branch
+  let branchName = branch || 'main'
+  if (!branch) {
+    try {
+      const repoMeta = await githubRequest(token, `/repos/${owner}/${repo}`)
+      branchName = repoMeta.default_branch || 'main'
+    } catch {
+      // keep default
+    }
+  }
+
+  return { files, branch: branchName }
 }
 
-async function handleCommits(req: VercelRequest, res: VercelResponse) {
-  try {
-    const { githubToken } = await getAuthenticatedUser(req.headers.authorization)
+async function handlePr(token: string, input: {
+  repoUrl: string
+  baseBranch: string
+  headBranch: string
+  title: string
+  body: string
+  changes: Array<{ filePath: string; newContent: string }>
+}) {
+  const { owner, repo } = parseGitHubRepoUrl(input.repoUrl)
 
-    if (!githubToken) {
-      return res.status(200).json([])
-    }
+  // Deduplicate changes by filePath
+  const changes = Array.from(new Map(input.changes.map((c) => [c.filePath, c])).values())
 
-    const repoUrl = (Array.isArray(req.query.repoUrl) ? req.query.repoUrl[0] : req.query.repoUrl) as string
-    if (!repoUrl) {
-      return res.status(400).json({ error: 'Missing repoUrl' })
-    }
+  // Get base ref
+  const baseRef = await githubRequest(token, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(input.baseBranch)}`)
+  const baseCommitSha = baseRef.object.sha
+  const baseCommit = await githubRequest(token, `/repos/${owner}/${repo}/git/commits/${baseCommitSha}`)
 
-    const { owner, repo } = parseGitHubRepoUrl(repoUrl)
-
-    const data: any[] = await githubRequest<any[]>(
-      githubToken,
-      `/repos/${owner}/${repo}/commits?per_page=30`
-    )
-
-    const commits = data.map((c: any) => ({
-      sha: c.sha,
-      message: c.commit.message.split('\n')[0],
-      author: c.commit.author.name,
-      date: c.commit.author.date,
-      url: c.html_url,
-    }))
-
-    return res.status(200).json(commits)
-  } catch {
-    return res.status(200).json([])
-  }
-}
-
-async function handleRepos(req: VercelRequest, res: VercelResponse) {
-  try {
-    const { githubToken, installationId } = await getAuthenticatedUser(req.headers.authorization)
-
-    console.log(`[github/repos] Fetching repos for installationId: ${installationId}`)
-
-    // Installation token só acede aos repos onde a App foi instalada
-    const repos = await githubRequest<any[]>(
-      githubToken,
-      '/installation/repositories?per_page=50'
-    )
-
-    // GitHub App endpoint retorna { repositories: [...] }
-    const list = (repos as any).repositories ?? repos
-
-    console.log(`[github/repos] Returned ${list.length} repositories`)
-    return res.status(200).json(list)
-  } catch (err: any) {
-    const isNotInstalled = err.message === 'GitHub App not installed'
-    console.error('[github/repos] Error:', err.message, err.stack)
-    return res.status(isNotInstalled ? 403 : 500).json({
-      error: err.message ?? 'Failed to fetch repos',
-      detail: err.stack ?? null,
-    })
-  }
-}
-
-async function handlePr(req: VercelRequest, res: VercelResponse) {
-  try {
-    const { user, githubToken } = await getAuthenticatedUser(req.headers.authorization)
-
-    if (!githubToken) {
-      return res.status(400).json({ error: 'GitHub account not connected' })
-    }
-
-    const { repoUrl, baseBranch, headBranch, title, body, projectId, changes } = req.body as {
-      repoUrl?: string
-      baseBranch?: string
-      headBranch?: string
-      title?: string
-      body?: string
-      projectId?: string
-      changes?: PullRequestChange[]
-    }
-
-    if (!repoUrl || !baseBranch || !headBranch || !title || !body || !changes?.length) {
-      return res.status(400).json({ error: 'Missing pull request payload' })
-    }
-
-    const { owner, repo } = parseGitHubRepoUrl(repoUrl)
-    const sanitizedChanges = Array.from(
-      new Map(changes.map((change) => [change.filePath, change])).values()
-    )
-
-    const baseRef = await githubRequest<any>(
-      githubToken,
-      `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(baseBranch)}`
-    )
-    const baseCommitSha = baseRef.object.sha as string
-    const baseCommit = await githubRequest<any>(
-      githubToken,
-      `/repos/${owner}/${repo}/git/commits/${baseCommitSha}`
-    )
-
-    const blobs = await Promise.all(
-      sanitizedChanges.map(async ({ filePath, newContent }) => {
-        const blob = await githubRequest<any>(githubToken, `/repos/${owner}/${repo}/git/blobs`, {
-          method: 'POST',
-          body: JSON.stringify({
-            content: Buffer.from(newContent, 'utf8').toString('base64'),
-            encoding: 'base64',
-          }),
-        })
-
-        return {
-          path: filePath,
-          mode: '100644',
-          type: 'blob',
-          sha: blob.sha,
-        }
+  // Create blobs
+  const blobs = await Promise.all(
+    changes.map(async ({ filePath, newContent }) => {
+      const blob = await githubRequest(token, `/repos/${owner}/${repo}/git/blobs`, {
+        method: 'POST',
+        body: JSON.stringify({
+          content: Buffer.from(newContent, 'utf8').toString('base64'),
+          encoding: 'base64',
+        }),
       })
-    )
-
-    const tree = await githubRequest<any>(githubToken, `/repos/${owner}/${repo}/git/trees`, {
-      method: 'POST',
-      body: JSON.stringify({
-        base_tree: baseCommit.tree.sha,
-        tree: blobs,
-      }),
+      return { path: filePath, mode: '100644', type: 'blob', sha: blob.sha }
     })
+  )
 
-    const commit = await githubRequest<any>(githubToken, `/repos/${owner}/${repo}/git/commits`, {
-      method: 'POST',
-      body: JSON.stringify({
-        message: 'refract: apply code quality fixes',
-        tree: tree.sha,
-        parents: [baseCommitSha],
-      }),
-    })
+  // Create tree
+  const tree = await githubRequest(token, `/repos/${owner}/${repo}/git/trees`, {
+    method: 'POST',
+    body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: blobs }),
+  })
 
-    await githubRequest<any>(githubToken, `/repos/${owner}/${repo}/git/refs`, {
-      method: 'POST',
-      body: JSON.stringify({
-        ref: `refs/heads/${headBranch}`,
-        sha: commit.sha,
-      }),
-    })
+  // Create commit
+  const commit = await githubRequest(token, `/repos/${owner}/${repo}/git/commits`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: 'refract: apply code quality fixes',
+      tree: tree.sha,
+      parents: [baseCommitSha],
+    }),
+  })
 
-    const pullRequest = await githubRequest<any>(githubToken, `/repos/${owner}/${repo}/pulls`, {
-      method: 'POST',
-      body: JSON.stringify({
-        title,
-        body,
-        head: headBranch,
-        base: baseBranch,
-      }),
-    })
+  // Create branch
+  await githubRequest(token, `/repos/${owner}/${repo}/git/refs`, {
+    method: 'POST',
+    body: JSON.stringify({ ref: `refs/heads/${input.headBranch}`, sha: commit.sha }),
+  })
 
-    void trackEvent('pr_created', {
-      project_id: projectId,
-      user_id: user.id,
-    })
+  // Create PR
+  const pr = await githubRequest(token, `/repos/${owner}/${repo}/pulls`, {
+    method: 'POST',
+    body: JSON.stringify({
+      title: input.title,
+      body: input.body,
+      head: input.headBranch,
+      base: input.baseBranch,
+    }),
+  })
 
-    return res.status(200).json({ url: pullRequest.html_url })
-  } catch (error: any) {
-    const status =
-      error.message === 'Missing authorization header' || error.message === 'Invalid session'
-        ? 401
-        : 500
-    return res.status(status).json({ error: error.message || 'Failed to create pull request' })
-  }
+  return { url: pr.html_url }
 }
 
-// ─── Main handler ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } {
+  const normalized = repoUrl
+    .trim()
+    .replace(/^git@github\.com:/, 'https://github.com/')
+    .replace(/\.git$/, '')
+    .replace(/\/+$/, '')
+
+  const match = normalized.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/)
+  if (!match) throw new Error('Invalid GitHub repository URL')
+
+  return { owner: match[1], repo: match[2] }
+}
+
+// ─── Router ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = req.query.action as string
 
-  switch (action) {
-    case 'branches':
-      if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
-      return handleBranches(req, res)
-    case 'clone':
-      if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-      return handleClone(req, res)
-    case 'commits':
-      if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
-      return handleCommits(req, res)
-    case 'repos':
-      if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
-      return handleRepos(req, res)
-    case 'pr':
-      if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-      return handlePr(req, res)
-    default:
-      return res.status(400).json({ error: `Unknown action: ${action}` })
+  try {
+    const token = getToken(req)
+
+    switch (action) {
+      case 'repos': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+        const repos = await handleRepos(token)
+        return res.status(200).json(repos)
+      }
+      case 'branches': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+        const repoUrl = req.query.repoUrl as string
+        if (!repoUrl) return res.status(400).json({ error: 'Missing repoUrl' })
+        const branches = await handleBranches(token, repoUrl)
+        return res.status(200).json({ branches })
+      }
+      case 'commits': {
+        if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+        const repoUrl = req.query.repoUrl as string
+        if (!repoUrl) return res.status(400).json({ error: 'Missing repoUrl' })
+        const commits = await handleCommits(token, repoUrl)
+        return res.status(200).json(commits)
+      }
+      case 'clone': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+        const { repoUrl, branch } = req.body ?? {}
+        if (!repoUrl) return res.status(400).json({ error: 'Missing repoUrl' })
+        const result = await handleClone(token, repoUrl, branch)
+        return res.status(200).json(result)
+      }
+      case 'pr': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+        const input = req.body
+        if (!input?.repoUrl || !input?.baseBranch || !input?.headBranch || !input?.title || !input?.body || !input?.changes?.length) {
+          return res.status(400).json({ error: 'Missing pull request payload' })
+        }
+        const result = await handlePr(token, input)
+        return res.status(200).json(result)
+      }
+      default:
+        return res.status(400).json({ error: `Unknown action: ${action}` })
+    }
+  } catch (err: any) {
+    console.error(`[github/${action}] Error:`, err.message)
+    return res.status(500).json({ error: err.message || 'GitHub request failed' })
   }
 }
