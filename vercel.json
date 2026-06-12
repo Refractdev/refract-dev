@@ -35,7 +35,7 @@
     "api/ai.ts": {
       "maxDuration": 30
     },
-    "api/github/webhook.ts": {
+    "api/auth/github.ts": {
       "maxDuration": 10
     },
     "api/jobs/process.ts": {
