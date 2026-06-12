@@ -5,25 +5,76 @@ import type { TransformProposal, SafetyResult } from '../types'
 
 export function runSafetyGate(proposal: TransformProposal, fileMap: Map<string, string>): TransformProposal {
   const direct = validateProposal(proposal, fileMap)
+
+  // Always attach the full safety result for transparency
   if (direct.passed) {
     return { ...proposal, safetyResult: direct }
   }
 
+  // Log WHY it failed for debugging
+  console.log(`[SafetyGate] ${proposal.type}(${proposal.id}) FAILED direct validation:`, {
+    syntaxOk: direct.syntaxOk,
+    errors: direct.errors,
+    warnings: direct.warnings,
+  })
+
   const reducedProposal = createConservativeProposal(proposal)
   if (!reducedProposal) {
-    return { ...proposal, safetyResult: direct }
+    // Nothing to reduce to — return the failure with clear reasons
+    return {
+      ...proposal,
+      safetyResult: {
+        ...direct,
+        warnings: [
+          ...direct.warnings,
+          `Safety Gate: proposal has no conservative fallback. Direct validation failed with ${direct.errors.length} error(s).`,
+        ],
+      },
+    }
   }
 
   const reduced = validateProposal(reducedProposal, fileMap)
-  if (!reduced.passed || isNoopProposal(reducedProposal, proposal)) {
-    return { ...proposal, safetyResult: direct }
+  if (!reduced.passed) {
+    // Both versions failed — report the original failure clearly
+    return {
+      ...proposal,
+      safetyResult: {
+        ...direct,
+        warnings: [
+          ...direct.warnings,
+          `Safety Gate: conservative fallback also failed (${reduced.errors.length} errors). Original proposal preserved for review.`,
+        ],
+      },
+    }
   }
 
+  if (isNoopProposal(reducedProposal, proposal)) {
+    // Reduced version is a no-op (before === after)
+    return {
+      ...proposal,
+      safetyResult: {
+        ...direct,
+        passed: false,
+        warnings: [
+          ...direct.warnings,
+          `Safety Gate: reduced version produces no changes (before === after). Original proposal rejected due to validation errors.`,
+          ...direct.errors.map(e => `Error: ${e}`),
+        ],
+      },
+    }
+  }
+
+  console.log(`[SafetyGate] ${proposal.type}(${proposal.id}) reduced to conservative version`)
   return {
     ...reducedProposal,
     safetyResult: {
       ...reduced,
-      warnings: [...reduced.warnings, 'Reduced to conservative version'],
+      passed: true,
+      warnings: [
+        ...reduced.warnings,
+        `Safety Gate: reduced to conservative version. ${direct.errors.length} validation error(s) suppressed.`,
+        ...direct.errors.map(e => `Suppressed error: ${e}`),
+      ],
     },
   }
 }

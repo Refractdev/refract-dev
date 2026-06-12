@@ -17,70 +17,71 @@ import type { TransformProposal, SafetyResult } from '../../engine/types'
 import { generateReport } from '../../lib/report'
 import { CodeMap } from './CodeMap'
 import { useTranslation } from '../../hooks/useTranslation'
+import { UnifiedDiffView } from '../../components/UnifiedDiffView'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const C = {
-  bg: 'var(--background)', 
-  surface: 'var(--card)', 
+  bg: 'var(--background)',
+  surface: 'var(--card)',
   surfaceHover: 'var(--accent)',
-  border: 'var(--border)', 
-  borderHover: 'rgba(255,255,255,0.4)', 
+  border: 'var(--border)',
+  borderHover: 'rgba(255,255,255,0.4)',
   text: 'var(--foreground)',
-  muted: 'var(--muted-foreground)', 
-  subtle: 'var(--accent)', 
-  blue: 'var(--ring)', 
-  blueHover: 'var(--ring)', 
-  blueDim: 'rgba(0,153,255,0.1)', 
-  green: 'var(--semantic-success)', 
-  red: '#ff5577', 
+  muted: 'var(--muted-foreground)',
+  subtle: 'var(--accent)',
+  blue: 'var(--ring)',
+  blueHover: 'var(--ring)',
+  blueDim: 'rgba(0,153,255,0.1)',
+  green: 'var(--semantic-success)',
+  red: '#ff5577',
 }
 
 const CATEGORY_META: Record<IssueCategory, { name: string; icon: string; impact: 'High' | 'Medium' | 'Low' }> = {
-  'oversized-component': { name: 'Oversized Components', icon: 'layout',    impact: 'High'   },
-  'any-type':            { name: 'Any Types',            icon: 'code2',     impact: 'High'   },
-  'dead-state':          { name: 'Dead useState',        icon: 'zap-off',   impact: 'Medium' },
-  'missing-docs':        { name: 'Missing Docs',         icon: 'file-text', impact: 'Low'    },
-  'console-log':         { name: 'Console Logs',         icon: 'terminal',  impact: 'Low'    },
-  'effect-no-deps':      { name: 'Effect No Deps',       icon: 'zap',       impact: 'High'   },
-  'prop-drilling':       { name: 'Prop Drilling',        icon: 'branch',    impact: 'Medium' },
-  'generic-naming':      { name: 'Generic Naming',       icon: 'tag',       impact: 'Low'    },
-  'circular-dep':        { name: 'Circular Deps',        icon: 'refresh-cw',impact: 'High'   },
-  'state-explosion':     { name: 'State Explosion',      icon: 'layers',    impact: 'High'   },
-  'api-in-component':    { name: 'API in Component',     icon: 'globe',     impact: 'High'   },
-  'missing-error-boundary': { name: 'Missing Error Boundary', icon: 'shield',  impact: 'Medium' },
-  'memory-leak':         { name: 'Memory Leak',          icon: 'activity',  impact: 'High'   },
-  'duplicate-logic':     { name: 'Duplicate Logic',      icon: 'copy',      impact: 'Medium' },
-  'unsafe-cast':         { name: 'Unsafe Cast',          icon: 'alert',     impact: 'High'   },
+  'oversized-component': { name: 'Oversized Components', icon: 'layout', impact: 'High' },
+  'any-type': { name: 'Any Types', icon: 'code2', impact: 'High' },
+  'dead-state': { name: 'Dead useState', icon: 'zap-off', impact: 'Medium' },
+  'missing-docs': { name: 'Missing Docs', icon: 'file-text', impact: 'Low' },
+  'console-log': { name: 'Console Logs', icon: 'terminal', impact: 'Low' },
+  'effect-no-deps': { name: 'Effect No Deps', icon: 'zap', impact: 'High' },
+  'prop-drilling': { name: 'Prop Drilling', icon: 'branch', impact: 'Medium' },
+  'generic-naming': { name: 'Generic Naming', icon: 'tag', impact: 'Low' },
+  'circular-dep': { name: 'Circular Deps', icon: 'refresh-cw', impact: 'High' },
+  'state-explosion': { name: 'State Explosion', icon: 'layers', impact: 'High' },
+  'api-in-component': { name: 'API in Component', icon: 'globe', impact: 'High' },
+  'missing-error-boundary': { name: 'Missing Error Boundary', icon: 'shield', impact: 'Medium' },
+  'memory-leak': { name: 'Memory Leak', icon: 'activity', impact: 'High' },
+  'duplicate-logic': { name: 'Duplicate Logic', icon: 'copy', impact: 'Medium' },
+  'unsafe-cast': { name: 'Unsafe Cast', icon: 'alert', impact: 'High' },
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 const CategoryIcon: React.FC<{ name: string; color?: string }> = ({ name, color = C.muted }) => {
   const props = { size: 14, color }
   switch (name) {
-    case 'layout':     return <Layout     {...props} />
-    case 'code2':      return <Code2      {...props} />
-    case 'zap-off':    return <ZapOff     {...props} />
-    case 'file-text':  return <FileText   {...props} />
-    case 'terminal':   return <Terminal   {...props} />
-    case 'zap':        return <Zap        {...props} />
-    case 'branch':     return <GitBranch  {...props} />
-    case 'tag':        return <Tag        {...props} />
+    case 'layout': return <Layout     {...props} />
+    case 'code2': return <Code2      {...props} />
+    case 'zap-off': return <ZapOff     {...props} />
+    case 'file-text': return <FileText   {...props} />
+    case 'terminal': return <Terminal   {...props} />
+    case 'zap': return <Zap        {...props} />
+    case 'branch': return <GitBranch  {...props} />
+    case 'tag': return <Tag        {...props} />
     case 'refresh-cw': return <RefreshCw  {...props} />
-    case 'layers':     return <Layers     {...props} />
-    case 'globe':      return <Globe      {...props} />
-    case 'shield':     return <Shield     {...props} />
-    case 'activity':   return <Activity   {...props} />
-    case 'copy':       return <Copy       {...props} />
-    case 'alert':      return <AlertTriangle {...props} />
-    default:           return <FileText   {...props} />
+    case 'layers': return <Layers     {...props} />
+    case 'globe': return <Globe      {...props} />
+    case 'shield': return <Shield     {...props} />
+    case 'activity': return <Activity   {...props} />
+    case 'copy': return <Copy       {...props} />
+    case 'alert': return <AlertTriangle {...props} />
+    default: return <FileText   {...props} />
   }
 }
 
 const ImpactBadge: React.FC<{ level: 'High' | 'Medium' | 'Low' }> = ({ level }) => {
   const styles: Record<string, React.CSSProperties> = {
-    High:   { background: 'var(--foreground)', color: 'var(--background)' },
+    High: { background: 'var(--foreground)', color: 'var(--background)' },
     Medium: { background: 'var(--accent)', color: 'var(--foreground)' },
-    Low:    { background: 'var(--background)', color: 'var(--muted-foreground)', border: '1px solid var(--border)' },
+    Low: { background: 'var(--background)', color: 'var(--muted-foreground)', border: '1px solid var(--border)' },
   }
   return (
     <span style={{ ...styles[level], fontSize: 10, borderRadius: 9999, padding: '2px 8px', fontWeight: 600, boxShadow: 'var(--shadow-border)', letterSpacing: '-0.02em' }}>
@@ -163,28 +164,28 @@ const AnalysingPanel: React.FC<{ files: any[]; scannedFiles: string[]; activeFil
   const { t } = useTranslation()
 
   return (
-  <div style={{ padding: '24px', width: '100%' }}>
-    <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>{t('projectView.analysingFiles')}</p>
-    <style>{'@keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }'}</style>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {files.filter(f => !f.isDirectory).map(f => {
-        const done = scannedFiles.includes(f.path)
-        const active = activeFile === f.path
-        return (
-          <div key={f.path} style={{ height: 32, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderRadius: 'var(--radius)', background: active ? 'var(--accent)' : done ? 'var(--background)' : 'transparent', boxShadow: active ? '0 0 0 1px var(--ring)' : done ? 'var(--shadow-border)' : 'none', transition: 'all 0.15s ease' }}>
-            <span style={{ fontSize: 11, color: done ? 'var(--foreground)' : 'var(--muted-foreground)', fontFamily: 'Geist Mono, monospace', flex: 1 }}>
-              {f.name}
-            </span>
-            {active && <span style={{ fontSize: 9, color: C.blue, letterSpacing: '0.8px' }}>SCANNING</span>}
-            {done && !active && <Check size={10} color={C.blue} />}
-            {!done && !active && (
-              <div style={{ height: 6, width: 60, borderRadius: 3, background: 'linear-gradient(90deg, var(--border) 25%, var(--muted-foreground) 50%, var(--border) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
-            )}
-          </div>
-        )
-      })}
+    <div style={{ padding: '24px', width: '100%' }}>
+      <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>{t('projectView.analysingFiles')}</p>
+      <style>{'@keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }'}</style>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {files.filter(f => !f.isDirectory).map(f => {
+          const done = scannedFiles.includes(f.path)
+          const active = activeFile === f.path
+          return (
+            <div key={f.path} style={{ height: 32, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderRadius: 'var(--radius)', background: active ? 'var(--accent)' : done ? 'var(--background)' : 'transparent', boxShadow: active ? '0 0 0 1px var(--ring)' : done ? 'var(--shadow-border)' : 'none', transition: 'all 0.15s ease' }}>
+              <span style={{ fontSize: 11, color: done ? 'var(--foreground)' : 'var(--muted-foreground)', fontFamily: 'Geist Mono, monospace', flex: 1 }}>
+                {f.name}
+              </span>
+              {active && <span style={{ fontSize: 9, color: C.blue, letterSpacing: '0.8px' }}>SCANNING</span>}
+              {done && !active && <Check size={10} color={C.blue} />}
+              {!done && !active && (
+                <div style={{ height: 6, width: 60, borderRadius: 3, background: 'linear-gradient(90deg, var(--border) 25%, var(--muted-foreground) 50%, var(--border) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
-  </div>
   )
 }
 
@@ -450,7 +451,7 @@ const RefactorProposalList: React.FC<{
       {proposals.map((proposal) => {
         const safety = safetyResults[proposal.id] || proposal.safetyResult
         const validating = validatingProposals[proposal.id]
-        
+
         const reduced = safety?.warnings.some((warning) => warning.includes('Reduced to conservative version'))
         const safetyLabel = !safety?.passed ? 'Failed' : reduced ? 'Reduced' : 'Safe'
         const safetyTone = !safety?.passed ? 'rgba(255, 91, 79, 0.14)' : reduced ? 'rgba(255, 179, 71, 0.14)' : 'rgba(74, 222, 128, 0.12)'
@@ -486,6 +487,16 @@ const RefactorProposalList: React.FC<{
               </div>
             )}
 
+            {/* Diff real: before vs after do motor AST */}
+            <div style={{ marginTop: 12, marginBottom: 12 }}>
+              <UnifiedDiffView
+                before={proposal.before}
+                after={proposal.after}
+                fileName={proposal.filePath}
+                maxHeight="300px"
+              />
+            </div>
+
             {!validating && safety && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12, marginBottom: 12, padding: 12, background: 'var(--accent)', borderRadius: 6, border: `1px solid ${C.border}` }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -509,7 +520,7 @@ const RefactorProposalList: React.FC<{
                         {safety.typecheck ? 'Type-Safe' : 'Type Error'}
                       </span>
                       {!safety.typecheck && safety.details?.typecheckLogs && safety.details.typecheckLogs.length > 0 && (
-                        <button 
+                        <button
                           onClick={() => toggleLog(proposal.id, 'typecheck', safety.details?.typecheckLogs?.join('\n') || '')}
                           style={{ background: 'none', border: 'none', color: 'var(--ring)', fontSize: 10, padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
                         >
@@ -522,19 +533,19 @@ const RefactorProposalList: React.FC<{
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: C.bg, borderRadius: 4 }}>
                     <span style={{ fontSize: 11, color: C.muted }}>Build Integrity</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ 
-                        fontSize: 11, 
-                        color: safety.buildOk === undefined ? '#eab308' : safety.buildOk ? C.green : C.red, 
-                        fontWeight: 500, 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: 4 
+                      <span style={{
+                        fontSize: 11,
+                        color: safety.buildOk === undefined ? '#eab308' : safety.buildOk ? C.green : C.red,
+                        fontWeight: 500,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
                       }}>
                         {safety.buildOk === undefined ? <AlertTriangle size={12} /> : safety.buildOk ? <Check size={12} /> : <X size={12} />}
                         {safety.buildOk === undefined ? 'Ignored' : safety.buildOk ? 'Build OK' : 'Failed'}
                       </span>
                       {safety.buildOk === false && safety.details?.buildLogs && safety.details.buildLogs.length > 0 && (
-                        <button 
+                        <button
                           onClick={() => toggleLog(proposal.id, 'build', safety.details?.buildLogs?.join('\n') || '')}
                           style={{ background: 'none', border: 'none', color: 'var(--ring)', fontSize: 10, padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
                         >
@@ -547,19 +558,19 @@ const RefactorProposalList: React.FC<{
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: C.bg, borderRadius: 4 }}>
                     <span style={{ fontSize: 11, color: C.muted }}>Unit Tests</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ 
-                        fontSize: 11, 
-                        color: safety.testsOk === undefined ? '#eab308' : safety.testsOk ? C.green : C.red, 
-                        fontWeight: 500, 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: 4 
+                      <span style={{
+                        fontSize: 11,
+                        color: safety.testsOk === undefined ? '#eab308' : safety.testsOk ? C.green : C.red,
+                        fontWeight: 500,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
                       }}>
                         {safety.testsOk === undefined ? <AlertTriangle size={12} /> : safety.testsOk ? <Check size={12} /> : <X size={12} />}
                         {safety.testsOk === undefined ? 'Ignored' : safety.testsOk ? 'Passed' : 'Failed'}
                       </span>
                       {safety.testsOk === false && safety.details?.testLogs && safety.details.testLogs.length > 0 && (
-                        <button 
+                        <button
                           onClick={() => toggleLog(proposal.id, 'test', safety.details?.testLogs?.join('\n') || '')}
                           style={{ background: 'none', border: 'none', color: 'var(--ring)', fontSize: 10, padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
                         >
@@ -578,7 +589,7 @@ const RefactorProposalList: React.FC<{
                     <div key={type} style={{ marginTop: 8 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                         <span style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Logs de {type}</span>
-                        <button 
+                        <button
                           onClick={() => toggleLog(proposal.id, type, '')}
                           style={{ background: 'none', border: 'none', color: C.muted, fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}
                         >
@@ -607,8 +618,8 @@ const RefactorProposalList: React.FC<{
             )}
 
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <button 
-                onClick={() => onApply(proposal)} 
+              <button
+                onClick={() => onApply(proposal)}
                 className="btn btn-primary btn-sm"
                 disabled={safety?.passed === false}
               >
@@ -624,7 +635,7 @@ const RefactorProposalList: React.FC<{
               )}
 
               {!safetyResults[proposal.id] && !validating && (
-                <button 
+                <button
                   onClick={() => onVerifySafety(proposal)}
                   className="btn btn-ghost btn-sm"
                   style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${C.border}`, padding: '4px 10px', fontSize: 12, marginLeft: 'auto' }}
@@ -730,11 +741,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
   const categories = result
     ? (Object.keys(CATEGORY_META) as IssueCategory[]).map(cat => {
-        const catIssues = allIssues.filter(i => i.category === cat)
-        const accepted = catIssues.filter(i => decisions[i.id] === 'accepted').length
-        const rejected = catIssues.filter(i => decisions[i.id] === 'rejected').length
-        return { cat, meta: CATEGORY_META[cat], count: catIssues.length, accepted, rejected }
-      }).filter(c => c.count > 0)
+      const catIssues = allIssues.filter(i => i.category === cat)
+      const accepted = catIssues.filter(i => decisions[i.id] === 'accepted').length
+      const rejected = catIssues.filter(i => decisions[i.id] === 'rejected').length
+      return { cat, meta: CATEGORY_META[cat], count: catIssues.length, accepted, rejected }
+    }).filter(c => c.count > 0)
     : []
 
 
@@ -748,7 +759,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
   useEffect(() => {
     if (!currentIssue) return;
-    
+
     if (explanationCache[currentIssue.id]) {
       setIssueExplanation(explanationCache[currentIssue.id]);
       setLoadingExplanation(false);
@@ -758,32 +769,32 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
     setIssueExplanation(null);
     setLoadingExplanation(true);
-    
+
     const issueId = currentIssue.id;
     const issuePath = currentIssue.filePath;
     const issueProblem = currentIssue.problem;
 
-     async function getExplanation() {
-       try {
-         setLoadingRefactor(true)
-         // Read file from uploaded files
-         const fileContent = getFileContentForIssue(currentIssue.filePath, fileMap);
-         const fileSource = fileContent ? fileContent.content : '';
-         const explanation = await explainIssue(currentIssue, fileSource, combinedGuidelines);
-         setRequestError(null)
-         setIssueExplanation(explanation);
-         setExplanationCache(prev => ({ ...prev, [issueId]: explanation }));
-       } catch (err) {
-         console.error('Failed to explain issue:', err)
-         if (err instanceof RateLimitError) {
-           setRequestError(err.message)
-         }
-         setIssueExplanation(issueProblem);
-       } finally {
-         setLoadingRefactor(false)
-         setLoadingExplanation(false);
-       }
-     }
+    async function getExplanation() {
+      try {
+        setLoadingRefactor(true)
+        // Read file from uploaded files
+        const fileContent = getFileContentForIssue(currentIssue.filePath, fileMap);
+        const fileSource = fileContent ? fileContent.content : '';
+        const explanation = await explainIssue(currentIssue, fileSource, combinedGuidelines);
+        setRequestError(null)
+        setIssueExplanation(explanation);
+        setExplanationCache(prev => ({ ...prev, [issueId]: explanation }));
+      } catch (err) {
+        console.error('Failed to explain issue:', err)
+        if (err instanceof RateLimitError) {
+          setRequestError(err.message)
+        }
+        setIssueExplanation(issueProblem);
+      } finally {
+        setLoadingRefactor(false)
+        setLoadingExplanation(false);
+      }
+    }
     getExplanation();
   }, [currentIssue?.id, combinedGuidelines])
 
@@ -797,7 +808,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   useEffect(() => {
     async function load() {
       if (!projectId) return
-      
+
       await loadFilesForProject(projectId)
 
       // Load guidelines
@@ -1346,21 +1357,21 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     const updatedIssues = result.issues.map(i => {
       if (i.id !== issueId) return i
       const patch = newPatch || { before: '', after: '' }
-      
+
       // Desescapar \n literais que a AI pode devolver
-      const afterStr = typeof patch.after === 'string' 
+      const afterStr = typeof patch.after === 'string'
         ? patch.after.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
         : ''
       const beforeStr = typeof patch.before === 'string'
         ? patch.before.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
         : ''
-        
+
       const afterArray = Array.isArray(patch.after) ? patch.after : afterStr.split('\n')
-      
-      return { 
-        ...i, 
+
+      return {
+        ...i,
         patch: { before: beforeStr, after: afterStr },
-        lines: { ...i.lines, after: afterArray } 
+        lines: { ...i.lines, after: afterArray }
       }
     })
     setResult({ ...result, issues: updatedIssues })
@@ -1520,8 +1531,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       {phase === 'idle' && viewingFile && (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
           <div style={{ padding: '16px 24px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-             <span style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: C.text }}>{viewingFile}</span>
-             <button onClick={() => setViewingFile(null)} className="btn btn-ghost btn-sm">Close File</button>
+            <span style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: C.text }}>{viewingFile}</span>
+            <button onClick={() => setViewingFile(null)} className="btn btn-ghost btn-sm">Close File</button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '24px', background: 'var(--card)' }}>
             <pre style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: C.muted, margin: 0, whiteSpace: 'pre-wrap' }}>
@@ -1635,8 +1646,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         <>
           <p className="section-label" style={{ marginBottom: 10 }}>{lang === 'pt' ? 'Porque' : 'Why'}</p>
           <p style={{ fontSize: 12, color: loadingExplanation ? C.muted : 'var(--muted-foreground)', lineHeight: 1.6, marginBottom: 20, fontStyle: loadingExplanation ? 'italic' : 'normal' }}>
-  {loadingExplanation ? t('projectView.analyzingIssue') : (issueExplanation ?? currentIssue.problem)}
-</p>
+            {loadingExplanation ? t('projectView.analyzingIssue') : (issueExplanation ?? currentIssue.problem)}
+          </p>
 
           <p className="section-label" style={{ marginBottom: 12 }}>{lang === 'pt' ? 'Impacto' : 'Impact'}</p>
           {[
@@ -1726,7 +1737,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
             ? 'Os ficheiros deste projecto não estão no armazenamento local. Volta a clonar o repositório para continuar.'
             : 'The files for this project are not in local storage. Re-clone the repository to continue.'}
         </p>
-        
+
         {recloneError && (
           <div style={{
             background: 'rgba(255, 91, 79, 0.08)',
