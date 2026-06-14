@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { Session } from '@supabase/supabase-js'
 import { supabase, UserProfile } from './supabase'
-import { buildGitHubAppInstallUrl } from './githubApp'
 import { identifyUser, resetUser } from './analytics'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -23,11 +22,11 @@ const AuthContext = createContext<AuthContextValue>({
   session: null,
   profile: null,
   loading: true,
-  refreshProfile: async () => {},
-  signOut: async () => {},
+  refreshProfile: async () => { },
+  signOut: async () => { },
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
-  installGitHubApp: () => {},
+  installGitHubApp: () => { },
 })
 
 export const useAuth = () => useContext(AuthContext)
@@ -205,23 +204,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [])
 
-  // Redireciona para instalação da GitHub App
-  // Passa o user_id no ?state= para o callback conseguir identificar o utilizador
+  // Conecta GitHub via Supabase OAuth (provider nativo)
   const installGitHubApp = useCallback(() => {
-    const userId = sessionRef.current?.user?.id
-    if (!userId) return
-
-    const rawState = JSON.stringify({
-      userId,
-      returnTo: window.location.origin,
+    supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        scopes: 'repo,user',
+        redirectTo: `${window.location.origin}/repos`,
+      },
     })
-    const state = btoa(rawState)
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/g, '')
-
-    const url = buildGitHubAppInstallUrl(state)
-    window.location.href = url
   }, [])
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────
