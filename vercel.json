@@ -35,9 +35,6 @@
     "api/ai.ts": {
       "maxDuration": 30
     },
-    "api/auth/github.ts": {
-      "maxDuration": 10
-    },
     "api/jobs/process.ts": {
       "maxDuration": 120
     },
