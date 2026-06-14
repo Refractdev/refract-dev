@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { getAdminSupabaseClient } from './_lib/supabase'
 
 const GITHUB_API_BASE = 'https://api.github.com'
 
@@ -26,11 +27,32 @@ async function githubRequest(
   return response.json()
 }
 
-function getToken(req: VercelRequest): string {
-  // Frontend sends github_token in X-GitHub-Token header
-  const token = req.headers['x-github-token'] as string
-  if (!token) throw new Error('Missing X-GitHub-Token header')
-  return token
+async function getGitHubToken(authHeader: string | undefined): Promise<string> {
+  if (!authHeader?.startsWith('Bearer ')) {
+    throw new Error('Missing authorization header')
+  }
+  const supabase = getAdminSupabaseClient()
+  const accessToken = authHeader.replace('Bearer ', '')
+  const { data: { user }, error } = await supabase.auth.getUser(accessToken)
+  if (error || !user) throw new Error('Invalid session')
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.admin.getUserById(user.id)
+  if (sessionError || !sessionData?.user) throw new Error('Failed to get user session')
+
+  // Get the provider_token from the user's identities
+  const identities = sessionData.user.identities ?? []
+  const githubIdentity = identities.find((id: any) => id.provider === 'github')
+  const providerToken = (githubIdentity as any)?.identity_data?.provider_token ?? null
+
+  if (!providerToken) {
+    // Try getting from session
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.provider_token
+    if (!token) throw new Error('GitHub not connected - please login with GitHub')
+    return token
+  }
+
+  return providerToken
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -74,8 +96,6 @@ async function handleCommits(token: string, repoUrl: string) {
 
 async function handleClone(token: string, repoUrl: string, branch?: string) {
   const { owner, repo } = parseGitHubRepoUrl(repoUrl)
-
-  // Use GitHub Contents API — get the repo tree
   const ref = branch || 'HEAD'
   const treeData = await githubRequest(token, `/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`)
   const tree = treeData.tree as Array<{ path: string; type: string; mode: string }>
@@ -88,9 +108,8 @@ async function handleClone(token: string, repoUrl: string, branch?: string) {
     const parts = entry.path.split('/')
     if (parts.some((p) => IGNORE_DIRS.has(p))) return false
     return TEXT_PATTERN.test(entry.path)
-  }).slice(0, 200) // limit to 200 files
+  }).slice(0, 200)
 
-  // Fetch each file content
   const files: Record<string, string> = {}
   for (const file of textFiles) {
     try {
@@ -103,7 +122,6 @@ async function handleClone(token: string, repoUrl: string, branch?: string) {
     }
   }
 
-  // Also try to detect the default branch
   let branchName = branch || 'main'
   if (!branch) {
     try {
@@ -126,16 +144,12 @@ async function handlePr(token: string, input: {
   changes: Array<{ filePath: string; newContent: string }>
 }) {
   const { owner, repo } = parseGitHubRepoUrl(input.repoUrl)
-
-  // Deduplicate changes by filePath
   const changes = Array.from(new Map(input.changes.map((c) => [c.filePath, c])).values())
 
-  // Get base ref
   const baseRef = await githubRequest(token, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(input.baseBranch)}`)
   const baseCommitSha = baseRef.object.sha
   const baseCommit = await githubRequest(token, `/repos/${owner}/${repo}/git/commits/${baseCommitSha}`)
 
-  // Create blobs
   const blobs = await Promise.all(
     changes.map(async ({ filePath, newContent }) => {
       const blob = await githubRequest(token, `/repos/${owner}/${repo}/git/blobs`, {
@@ -149,13 +163,11 @@ async function handlePr(token: string, input: {
     })
   )
 
-  // Create tree
   const tree = await githubRequest(token, `/repos/${owner}/${repo}/git/trees`, {
     method: 'POST',
     body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: blobs }),
   })
 
-  // Create commit
   const commit = await githubRequest(token, `/repos/${owner}/${repo}/git/commits`, {
     method: 'POST',
     body: JSON.stringify({
@@ -165,13 +177,11 @@ async function handlePr(token: string, input: {
     }),
   })
 
-  // Create branch
   await githubRequest(token, `/repos/${owner}/${repo}/git/refs`, {
     method: 'POST',
     body: JSON.stringify({ ref: `refs/heads/${input.headBranch}`, sha: commit.sha }),
   })
 
-  // Create PR
   const pr = await githubRequest(token, `/repos/${owner}/${repo}/pulls`, {
     method: 'POST',
     body: JSON.stringify({
@@ -206,7 +216,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = req.query.action as string
 
   try {
-    const token = getToken(req)
+    const token = await getGitHubToken(req.headers.authorization)
 
     switch (action) {
       case 'repos': {

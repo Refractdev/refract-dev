@@ -242,52 +242,40 @@ export async function getProjectDependencies(projectPath: string): Promise<{ dep
   return { dependencies: [], allFiles: [] }
 }
 
-// ─── GitHub OAuth helpers ──────────────────────────────────────────────────
+// ─── GitHub OAuth via Supabase ────────────────────────────────────────────
 
-/** Get GitHub OAuth token from URL params after redirect, then store it */
-export function getGitHubTokenFromUrl(): string | null {
-  const params = new URLSearchParams(window.location.search)
-  const token = params.get('github_token')
-  if (token) {
-    sessionStorage.setItem('github_token', token)
-    // Clean URL
-    const url = new URL(window.location.href)
-    url.searchParams.delete('github_token')
-    url.searchParams.delete('github_user')
-    window.history.replaceState({}, '', url.toString())
-  }
-  return sessionStorage.getItem('github_token')
+/** Sign in with GitHub OAuth through Supabase */
+export function signInWithGitHub() {
+  return supabase.auth.signInWithOAuth({
+    provider: 'github',
+    options: {
+      scopes: 'repo,user',
+      redirectTo: `${window.location.origin}/repos`,
+    },
+  })
 }
 
-export function getStoredGitHubToken(): string | null {
-  return sessionStorage.getItem('github_token')
+/** Get GitHub provider_token from current Supabase session */
+async function getGitHubToken(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not authenticated')
+  const token = session.provider_token
+  if (!token) throw new Error('GitHub not connected - please login with GitHub')
+  return token
 }
 
-export function clearGitHubToken(): void {
-  sessionStorage.removeItem('github_token')
-}
-
-export function buildGitHubOAuthUrl(redirectPath?: string): string {
-  const clientId = 'Ov23liWreseZjhQPKzDp'
-  const redirectUri = `${window.location.origin}/api/auth/github`
-  const state = redirectPath || window.location.pathname
-  return `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo,user&state=${encodeURIComponent(state)}`
-}
-
-function githubHeaders(): Record<string, string> {
-  const token = getStoredGitHubToken()
-  if (!token) throw new Error('GitHub not connected')
-  return {
+function githubHeaders(): Promise<Record<string, string>> {
+  return getGitHubToken().then(token => ({
     'Content-Type': 'application/json',
-    'X-GitHub-Token': token,
-  }
+    'Authorization': `Bearer ${token}`,
+  }))
 }
 
 // ─── GitHub API ─────────────────────────────────────────────────────────────
 
 export async function getGitHubRepos(): Promise<GitHubRepo[]> {
   const response = await fetch('/api/github?action=repos', {
-    headers: githubHeaders(),
+    headers: await githubHeaders(),
   })
   if (!response.ok) {
     const body = await response.text().catch(() => '')
@@ -298,7 +286,7 @@ export async function getGitHubRepos(): Promise<GitHubRepo[]> {
 
 export async function getGitHubBranches(repoUrl: string): Promise<{ branches: GitHubBranch[] }> {
   const response = await fetch(`/api/github?action=branches&repoUrl=${encodeURIComponent(repoUrl)}`, {
-    headers: githubHeaders(),
+    headers: await githubHeaders(),
   })
   return readResponse<{ branches: GitHubBranch[] }>(response, 'Failed to get GitHub branches')
 }
@@ -306,7 +294,7 @@ export async function getGitHubBranches(repoUrl: string): Promise<{ branches: Gi
 export async function cloneGitHubRepo(repoUrl: string, branch?: string): Promise<GitHubCloneResult> {
   const response = await fetch('/api/github?action=clone', {
     method: 'POST',
-    headers: githubHeaders(),
+    headers: await githubHeaders(),
     body: JSON.stringify({ repoUrl, branch }),
   })
   return readResponse<GitHubCloneResult>(response, 'Failed to clone repo')
@@ -315,7 +303,7 @@ export async function cloneGitHubRepo(repoUrl: string, branch?: string): Promise
 export async function createGitHubPullRequest(input: GitHubPullRequestInput): Promise<{ url: string }> {
   const response = await fetch('/api/github?action=pr', {
     method: 'POST',
-    headers: githubHeaders(),
+    headers: await githubHeaders(),
     body: JSON.stringify(input),
   })
   return readResponse<{ url: string }>(response, 'Failed to create PR')
@@ -324,7 +312,7 @@ export async function createGitHubPullRequest(input: GitHubPullRequestInput): Pr
 export async function fetchProjectCommits(repoUrl: string | null | undefined): Promise<GitHubCommit[]> {
   if (!repoUrl) return []
   const response = await fetch(`/api/github?action=commits&repoUrl=${encodeURIComponent(repoUrl)}`, {
-    headers: githubHeaders(),
+    headers: await githubHeaders(),
   })
   if (!response.ok) return []
   return response.json()
