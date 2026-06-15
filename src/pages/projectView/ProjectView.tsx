@@ -488,13 +488,47 @@ const RefactorProposalList: React.FC<{
             )}
 
             {/* Diff real: before vs after do motor AST */}
-            <div style={{ marginTop: 12, marginBottom: 12 }}>
-              <UnifiedDiffView
-                before={proposal.before}
-                after={proposal.after}
-                fileName={proposal.filePath}
-                maxHeight="300px"
-              />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12, marginBottom: 12 }}>
+              {proposal.movedTo && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 14px',
+                  background: 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.18)',
+                  borderRadius: 10,
+                  fontSize: 12,
+                  color: 'var(--ring)',
+                  fontFamily: 'Geist Mono, monospace'
+                }}>
+                  <GitBranch size={14} />
+                  <span>Rename/Move: {proposal.filePath} → {proposal.movedTo}</span>
+                </div>
+              )}
+
+              {proposal.before !== proposal.after && (
+                <UnifiedDiffView
+                  before={proposal.before}
+                  after={proposal.after}
+                  fileName={proposal.filePath}
+                  maxHeight="300px"
+                />
+              )}
+
+              {proposal.newFiles && proposal.newFiles.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {proposal.newFiles.map((newFile, fIdx) => (
+                    <UnifiedDiffView
+                      key={fIdx}
+                      before=""
+                      after={newFile.content}
+                      fileName={newFile.path}
+                      maxHeight="300px"
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             {!validating && safety && (

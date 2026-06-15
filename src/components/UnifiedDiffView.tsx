@@ -201,14 +201,32 @@ export const UnifiedDiffView: React.FC<UnifiedDiffViewProps> = ({
                     <span style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>
                         {fileName || 'Diff View'}
                     </span>
+                    {before === '' && after !== '' && (
+                        <span style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            color: '#10b981',
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                        }}>
+                            New File
+                        </span>
+                    )}
                 </div>
                 <div style={{ display: 'flex', gap: 12, fontSize: 11, color: C.muted }}>
-                    <span style={{ color: C.red }}>
-                        -{totalChanges.deletes}
-                    </span>
-                    <span style={{ color: C.green }}>
-                        +{totalChanges.inserts}
-                    </span>
+                    {totalChanges.deletes > 0 && (
+                        <span style={{ color: C.red }}>
+                            -{totalChanges.deletes}
+                        </span>
+                    )}
+                    {totalChanges.inserts > 0 && (
+                        <span style={{ color: C.green }}>
+                            +{totalChanges.inserts}
+                        </span>
+                    )}
                 </div>
             </div>
 

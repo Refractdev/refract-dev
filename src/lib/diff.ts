@@ -163,97 +163,103 @@ export interface DiffHunk {
 export function buildDiffHunks(before: string, after: string, contextLines = 3): DiffHunk[] {
     const ops = computeLineDiff(before, after)
     const hunks: DiffHunk[] = []
-    let current: DiffHunk['lines'] = []
+    
     let oldLineNo = 1
     let newLineNo = 1
-    let pendingContext: Array<{ content: string; oldLineNo: number; newLineNo: number }> = []
+    
+    let currentHunkLines: DiffHunk['lines'] = []
+    let equalBuffer: Array<{ type: 'equal'; content: string; oldLineNo: number; newLineNo: number }> = []
 
-    function flushPending() {
-        if (pendingContext.length > 0) {
-            const ctx = pendingContext.slice(-contextLines)
-            for (const c of ctx) {
-                current.push({ type: 'equal', content: c.content, oldLineNo: c.oldLineNo, newLineNo: c.newLineNo })
-            }
-            pendingContext = []
-        }
-    }
-
-    function finishHunk() {
-        if (current.length === 0) return
-
-        const firstChange = current.find(l => l.type !== 'equal')
-        const lastChange = [...current].reverse().find(l => l.type !== 'equal')
-
-        if (!firstChange || !lastChange) {
-            current = []
+    function flushHunk() {
+        // Only flush if we actually have edits (insert or delete) in the hunk
+        const hasEdits = currentHunkLines.some(l => l.type === 'insert' || l.type === 'delete')
+        if (!hasEdits) {
+            currentHunkLines = []
             return
         }
 
-        // Trim leading equal lines beyond context
-        while (current.length > 0 && current[0].type === 'equal') {
-            current.shift()
+        // Append trailing context from the start of equalBuffer
+        const trailingCtx = equalBuffer.slice(0, contextLines)
+        for (const c of trailingCtx) {
+            currentHunkLines.push({
+                type: 'equal',
+                content: c.content,
+                oldLineNo: c.oldLineNo,
+                newLineNo: c.newLineNo
+            })
         }
 
-        // Trim trailing equal lines beyond context
-        while (current.length > 0 && current[current.length - 1].type === 'equal') {
-            current.pop()
-        }
+        const firstLine = currentHunkLines[0]
+        const hunkOldStart = firstLine?.oldLineNo ?? oldLineNo
+        const hunkNewStart = firstLine?.newLineNo ?? newLineNo
+        const hunkOldCount = currentHunkLines.filter(l => l.type === 'delete' || l.type === 'equal').length
+        const hunkNewCount = currentHunkLines.filter(l => l.type === 'insert' || l.type === 'equal').length
 
-        const hunkOldStart = current[0]?.oldLineNo ?? oldLineNo
-        const hunkNewStart = current[0]?.newLineNo ?? newLineNo
-        const hunkOldCount = current.filter(l => l.type === 'delete' || l.type === 'equal').length
-        const hunkNewCount = current.filter(l => l.type === 'insert' || l.type === 'equal').length
-
-        // Re-add context lines before first change
-        const trimmedBefore: typeof current = []
-        let foundChange = false
-        for (const line of current) {
-            if (line.type !== 'equal') foundChange = true
-            if (foundChange) trimmedBefore.push(line)
-        }
-        // Re-add context lines after last change
-        foundChange = false
-        const trimmedAfter: typeof current = []
-        for (const line of [...current].reverse()) {
-            if (line.type !== 'equal') foundChange = true
-            if (foundChange) trimmedAfter.unshift(line)
-        }
-
-        // Just use current as-is after trimming
         hunks.push({
             oldStart: hunkOldStart,
             oldLines: hunkOldCount,
             newStart: hunkNewStart,
             newLines: hunkNewCount,
-            lines: current,
+            lines: [...currentHunkLines],
         })
 
-        current = []
+        currentHunkLines = []
     }
 
     for (const op of ops) {
         if (op.type === 'equal') {
-            pendingContext.push({ content: op.value, oldLineNo, newLineNo })
+            equalBuffer.push({
+                type: 'equal',
+                content: op.value,
+                oldLineNo,
+                newLineNo
+            })
             oldLineNo++
             newLineNo++
 
-            if (pendingContext.length > contextLines * 2) {
-                pendingContext.shift()
+            if (currentHunkLines.length > 0) {
+                // If we are currently building a hunk and the consecutive equal lines exceed contextLines * 2, split it.
+                if (equalBuffer.length > contextLines * 2) {
+                    flushHunk()
+                    // The last contextLines of equalBuffer should serve as the leading context for the next hunk.
+                    equalBuffer = equalBuffer.slice(-contextLines)
+                }
             }
-
-            current.push({ type: 'equal', content: op.value, oldLineNo: oldLineNo - 1, newLineNo: newLineNo - 1 })
         } else {
-            flushPending()
+            if (currentHunkLines.length === 0) {
+                // Start a new hunk: include leading context from equalBuffer
+                const leadingCtx = equalBuffer.slice(-contextLines)
+                for (const c of leadingCtx) {
+                    currentHunkLines.push({
+                        type: 'equal',
+                        content: c.content,
+                        oldLineNo: c.oldLineNo,
+                        newLineNo: c.newLineNo
+                    })
+                }
+            } else {
+                // We are already inside a hunk: append all accumulated equal lines
+                for (const c of equalBuffer) {
+                    currentHunkLines.push({
+                        type: 'equal',
+                        content: c.content,
+                        oldLineNo: c.oldLineNo,
+                        newLineNo: c.newLineNo
+                    })
+                }
+            }
+            equalBuffer = []
+
             if (op.type === 'delete') {
-                current.push({ type: 'delete', content: op.value, oldLineNo, newLineNo: null })
+                currentHunkLines.push({ type: 'delete', content: op.value, oldLineNo, newLineNo: null })
                 oldLineNo++
             } else {
-                current.push({ type: 'insert', content: op.value, oldLineNo: null, newLineNo })
+                currentHunkLines.push({ type: 'insert', content: op.value, oldLineNo: null, newLineNo })
                 newLineNo++
             }
         }
     }
 
-    finishHunk()
+    flushHunk()
     return hunks
 }
