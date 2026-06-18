@@ -34,7 +34,7 @@ class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { ha
             className="btn btn-primary"
             style={{ marginTop: 16 }}
           >
-            Tentar novamente
+            Try again
           </button>
         </div>
       );
@@ -45,172 +45,186 @@ class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { ha
 
 export type Page = 'home' | 'projects' | 'repos' | 'guidelines' | 'settings' | 'projectView' | 'project-monitor';
 
-function routeToPage(pathname: string): Page {
+function parseLocation(): { page: Page; projectId: string | null; monitorId: string | null; settingsTab: string } {
+  const { pathname, search } = window.location;
+  const params = new URLSearchParams(search);
+  const tab = params.get('tab') ?? 'profile';
+  const projectId = params.get('projectId');
+  const monitorId = params.get('monitorId');
+
+  let page: Page;
   switch (pathname) {
-    case '/projects':
-      return 'projects';
-    case '/repos':
-      return 'repos';
-    case '/guidelines':
-      return 'settings';
-    case '/settings':
-      return 'settings';
-    case '/project-view':
-      return 'projectView';
-    case '/project-monitor':
-      return 'project-monitor';
-    default:
-      return 'home';
+    case '/projects':        page = 'projects'; break;
+    case '/repos':           page = 'repos'; break;
+    case '/guidelines':      page = 'settings'; break;
+    case '/settings':        page = 'settings'; break;
+    case '/project-view':    page = 'projectView'; break;
+    case '/project-monitor': page = 'project-monitor'; break;
+    default:                 page = 'home'; break;
   }
+
+  return { page, projectId, monitorId, settingsTab: pathname === '/guidelines' ? 'guidelines' : tab };
 }
 
-function pageToRoute(page: Page): string {
-  switch (page) {
-    case 'projects':
-      return '/projects';
-    case 'repos':
-      return '/repos';
-    case 'guidelines':
-      return '/settings?tab=guidelines';
-    case 'settings':
-      return '/settings';
-    case 'projectView':
-      return '/project-view';
-    case 'project-monitor':
-      return '/project-monitor';
-    default:
-      return '/';
-  }
+function buildUrl(page: Page, extras: Record<string, string> = {}): string {
+  const routeMap: Record<Page, string> = {
+    home:             '/',
+    projects:         '/projects',
+    repos:            '/repos',
+    guidelines:       '/settings',
+    settings:         '/settings',
+    projectView:      '/project-view',
+    'project-monitor': '/project-monitor',
+  };
+
+  const base = routeMap[page] ?? '/';
+  const params = new URLSearchParams(extras);
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
 }
 
 export const AppShell: React.FC = () => {
   const { session, loading, profile, refreshProfile } = useAuth();
-  const [activePage, setActivePage] = useState<Page>(() => routeToPage(window.location.pathname));
-  const [activeSettingsTab, setActiveSettingsTab] = useState<string>(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tab = params.get('tab');
-    if (tab) return tab;
-    if (window.location.pathname === '/guidelines') return 'guidelines';
-    return 'profile';
-  });
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [monitorProjectId, setMonitorProjectId] = useState<string | null>(null);
+
+  const init = parseLocation();
+  const [activePage, setActivePage] = useState<Page>(init.page);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<string>(init.settingsTab);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(init.projectId);
+  const [monitorProjectId, setMonitorProjectId] = useState<string | null>(init.monitorId);
   const [monitorProjectData, setMonitorProjectData] = useState<any>(null);
 
   React.useEffect(() => {
     const syncPageFromLocation = () => {
-      const page = routeToPage(window.location.pathname);
-      setActivePage(page);
-      
-      const params = new URLSearchParams(window.location.search);
-      const tab = params.get('tab');
-      if (tab) {
-        setActiveSettingsTab(tab);
-      } else if (window.location.pathname === '/guidelines') {
-        setActiveSettingsTab('guidelines');
-      } else {
-        setActiveSettingsTab('profile');
-      }
+      const parsed = parseLocation();
+      setActivePage(parsed.page);
+      setActiveSettingsTab(parsed.settingsTab);
+      if (parsed.projectId) setActiveProjectId(parsed.projectId);
+      if (parsed.monitorId) setMonitorProjectId(parsed.monitorId);
     };
 
     window.addEventListener('popstate', syncPageFromLocation);
     return () => window.removeEventListener('popstate', syncPageFromLocation);
   }, []);
 
-  // Auth gate: show splash screen while loading auth state
-  if (loading) {
-    return <SplashScreen />;
-  }
+  if (loading) return <SplashScreen />;
+  if (!session)  return <AuthPage />;
+  if (!profile)  return <SplashScreen />;
 
-  // Auth gate: show login page if not authenticated
-  if (!session) {
-    return <AuthPage />;
-  }
-
-  // Wait for profile to load after session is established
-  if (session && !profile) {
-    return <SplashScreen />;
-  }
-
-  // Onboarding gate: show onboarding if user hasn't completed it
-  if (profile && !profile.onboarding_completed) {
+  if (!profile.onboarding_completed) {
     return (
       <OnboardingPage
         onComplete={async () => {
           try {
-            sessionStorage.removeItem('justSignedUp')
-            await refreshProfile()
+            sessionStorage.removeItem('justSignedUp');
+            await refreshProfile();
           } catch (err) {
-            console.error('onboarding onComplete refreshProfile failed', err)
+            console.error('[AppShell] onboarding refreshProfile failed:', err);
           }
         }}
       />
-    )
+    );
   }
 
-  // User is authenticated and onboarding is complete, show app
-
   const handleNavigate = (page: Page | string, params?: any) => {
-    if (params?.projectId) {
-      if (page === 'project-monitor') {
-        setMonitorProjectId(params.projectId);
-        if (params.projectData) setMonitorProjectData(params.projectData);
-      } else {
-        setActiveProjectId(params.projectId);
-      }
-    }
     const normalizedPage = page === 'project-view' ? 'projectView' : (page as Page);
-    
+
     if (normalizedPage === 'guidelines') {
       setActivePage('settings');
       setActiveSettingsTab('guidelines');
-      window.history.pushState({}, '', '/settings?tab=guidelines');
+      window.history.pushState({}, '', buildUrl('settings', { tab: 'guidelines' }));
       return;
     }
 
-    setActivePage(normalizedPage);
+    const urlExtras: Record<string, string> = {};
+
+    if (normalizedPage === 'projectView') {
+      const id = params?.projectId ?? activeProjectId ?? '';
+      setActiveProjectId(id);
+      if (id) urlExtras.projectId = id;
+    }
+
+    if (normalizedPage === 'project-monitor') {
+      const id = params?.projectId ?? monitorProjectId ?? '';
+      setMonitorProjectId(id);
+      if (params?.projectData) setMonitorProjectData(params.projectData);
+      if (id) urlExtras.monitorId = id;
+    }
 
     if (normalizedPage === 'settings') {
-      const targetTab = params?.tab || 'profile';
+      const targetTab = params?.tab ?? 'profile';
       setActiveSettingsTab(targetTab);
-      window.history.pushState({}, '', `/settings?tab=${targetTab}`);
-    } else {
-      window.history.pushState({}, '', pageToRoute(normalizedPage));
+      urlExtras.tab = targetTab;
     }
+
+    setActivePage(normalizedPage);
+    window.history.pushState({}, '', buildUrl(normalizedPage, urlExtras));
   };
 
   const handleSettingsTabChange = (tab: string) => {
     setActiveSettingsTab(tab);
-    window.history.pushState({}, '', `/settings?tab=${tab}`);
+    window.history.pushState({}, '', buildUrl('settings', { tab }));
   };
 
   const renderPage = () => {
     switch (activePage) {
-      case 'home':        return <HomePage onNavigate={handleNavigate} />;
-      case 'projects':    return <ProjectsPage
-                              onOpenProject={(id) => handleNavigate('projectView', { projectId: id })}
-                              onOpenMonitor={(id, data) => handleNavigate('project-monitor', { projectId: id, projectData: data })}
-                              onNavigate={handleNavigate}
-                            />;
-      case 'repos':       return <ReposPage onNavigate={handleNavigate} />;
-      case 'settings':    return <SettingsPage activeTab={activeSettingsTab} onTabChange={handleSettingsTabChange} />;
-      case 'projectView': return <ProjectView projectId={activeProjectId} onBack={() => handleNavigate('home')} />;
-      case 'project-monitor': return <ProjectMonitor projectId={monitorProjectId ?? ''} initialProjectData={monitorProjectData} onBack={() => handleNavigate('projects')} onOpenProject={(id) => handleNavigate('projectView', { projectId: id })} />;
-      default:            return <HomePage onNavigate={handleNavigate} />;
+      case 'home':
+        return <HomePage onNavigate={handleNavigate} />;
+
+      case 'projects':
+        return (
+          <ProjectsPage
+            onOpenProject={(id) => handleNavigate('projectView', { projectId: id })}
+            onOpenMonitor={(id, data) => handleNavigate('project-monitor', { projectId: id, projectData: data })}
+            onNavigate={handleNavigate}
+          />
+        );
+
+      case 'repos':
+        return <ReposPage onNavigate={handleNavigate} />;
+
+      case 'settings':
+        return <SettingsPage activeTab={activeSettingsTab} onTabChange={handleSettingsTabChange} />;
+
+      case 'projectView':
+        return (
+          <ProjectView
+            projectId={activeProjectId}
+            onBack={() => handleNavigate('projects')}
+          />
+        );
+
+      case 'project-monitor':
+        return (
+          <ProjectMonitor
+            projectId={monitorProjectId ?? ''}
+            initialProjectData={monitorProjectData}
+            onBack={() => handleNavigate('projects')}
+            onOpenProject={(id) => handleNavigate('projectView', { projectId: id })}
+          />
+        );
+
+      default:
+        return <HomePage onNavigate={handleNavigate} />;
     }
   };
 
+  const showSidebar = activePage !== 'projectView' && activePage !== 'project-monitor';
+
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--canvas)' }}>
-      {activePage !== 'projectView' && activePage !== 'project-monitor' && (
-        <Sidebar 
-          activePage={activePage} 
-          onNavigate={(p) => handleNavigate(p)} 
+      {showSidebar && (
+        <Sidebar
+          activePage={activePage}
+          onNavigate={(p) => handleNavigate(p)}
           activeSettingsTab={activeSettingsTab}
           onSettingsTabChange={handleSettingsTabChange}
         />
       )}
-      <main style={{ flex: 1, overflow: 'hidden', height: '100vh' }}>
+      {/* On mobile the sidebar becomes a drawer; main content is below the fixed top bar */}
+      <main
+        style={{ flex: 1, overflow: 'hidden', height: '100vh' }}
+        className={showSidebar ? 'md:pt-0 pt-[56px]' : ''}
+      >
         <ErrorBoundary>
           {renderPage()}
         </ErrorBoundary>

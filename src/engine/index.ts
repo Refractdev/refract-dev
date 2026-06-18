@@ -29,7 +29,6 @@ export async function analyzeForRefactoring(
   ])
 
   const proposals = proposalGroups.flat()
-  console.log(`[analyzeForRefactoring] proposals before safety gate: ${proposals.length}`, proposals.map(p => p.type))
   const enriched = proposals.map((proposal) => {
     const blastRadius = calculateBlastRadius(proposal.filePath, fileMap)
     const impactRadar = evaluateImpactRadar(blastRadius)
@@ -45,9 +44,7 @@ export async function analyzeForRefactoring(
 
   const safeProposals = enriched
     .map((proposal) => {
-      const result = runSafetyGate(proposal, fileMap)
-      console.log(`[analyzeForRefactoring] Safety gate for ${proposal.type}: passed = ${result.safetyResult?.passed}, errors:`, result.safetyResult?.errors, `warnings:`, result.safetyResult?.warnings)
-      return result
+      return runSafetyGate(proposal, fileMap)
     })
     .filter((proposal) => proposal.safetyResult?.passed)
     .filter((proposal) => proposal.after !== proposal.before || proposal.movedTo || (proposal.newFiles?.length ?? 0) > 0)

@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { runAIChat } from './_lib/ai'
 import { getAuthenticatedUserWithOptionalGitHub } from './_lib/auth'
+import { checkRateLimit, applyRateLimitHeaders } from './_lib/ratelimit'
 
 // ─── Briefing prompts ─────────────────────────────────────────────────────────
 
@@ -226,10 +227,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  let userId: string
+  let plan: string
   try {
-    await getAuthenticatedUserWithOptionalGitHub(req.headers.authorization)
+    const auth = await getAuthenticatedUserWithOptionalGitHub(req.headers.authorization)
+    userId = auth.user.id
+    plan = auth.plan
   } catch (error: any) {
     return res.status(401).json({ error: error.message || 'Unauthorized' })
+  }
+
+  const rateResult = await checkRateLimit(userId, plan, 'ai')
+  applyRateLimitHeaders(res, rateResult)
+  if (!rateResult.success) {
+    return res.status(429).json({
+      error: 'Too many requests. Please wait before trying again.',
+      reset: rateResult.reset,
+    })
   }
 
   const action = req.query.action as string

@@ -1137,28 +1137,41 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         const proposals = event.data.proposals as TransformProposal[]
 
         if (autoApplyAll) {
-          const nextMap = batchApply(fileMap, proposals)
+          // High-risk transforms require explicit per-proposal review and PR — never bulk apply.
+          const SAFE_FOR_BULK: TransformProposal['type'][] = ['import-cleanup', 'component-decomposition']
+          const safeProposals = proposals.filter((p) => SAFE_FOR_BULK.includes(p.type))
+          const reviewProposals = proposals.filter((p) => !SAFE_FOR_BULK.includes(p.type))
 
-          setFileMap(nextMap)
-          void trackEvent('refract_applied', {
-            project_id: project?.id,
-            changes_count: proposals.length,
-            mode: 'bulk',
-          })
-          setRefactorProposals([])
-          setPhase('complete')
+          if (safeProposals.length > 0) {
+            const nextMap = batchApply(fileMap, safeProposals)
+            setFileMap(nextMap)
+            void trackEvent('refract_applied', {
+              project_id: project?.id,
+              changes_count: safeProposals.length,
+              mode: 'bulk',
+            })
+            void (async () => {
+              try {
+                for (const proposal of safeProposals) {
+                  await persistRefactorDecision(proposal, 'accepted', 1)
+                }
+              } catch (error) {
+                console.error('[refactor] Failed to persist bulk decisions', error)
+              }
+            })()
+          }
+
+          if (reviewProposals.length > 0) {
+            // Present risky proposals for manual review instead of auto-applying
+            setRefactorProposals(reviewProposals)
+            setPhase('refactoring')
+          } else {
+            setRefactorProposals([])
+            setPhase('complete')
+          }
+
           setLoadingRefactor(false)
           setLoadingRefactorEngine(false)
-
-          void (async () => {
-            try {
-              for (const proposal of proposals) {
-                await persistRefactorDecision(proposal, 'accepted', 1)
-              }
-            } catch (error) {
-              console.error('Failed to auto-apply refactor proposals', error)
-            }
-          })()
           return
         }
 

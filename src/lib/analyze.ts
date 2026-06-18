@@ -301,92 +301,80 @@ export async function runAnalysis(
   onProgress?: (file: string) => void,
 ): Promise<AnalysisResult> {
   const t0 = Date.now();
-  console.log('[Analyze] runAnalysis starting for', files.size, 'files...');
   const issues: Issue[] = [];
   const scannedFiles: string[] = [];
 
-  // 1. Pre-parsing files into AST cache first
+  // 1. Pre-parse files into AST cache
   const parsedCache = new Map<string, ParsedFile>();
-  console.log('[Analyze] Pre-parsing files into AST cache...');
   let parseErrors = 0;
   for (const [filePath, content] of files) {
     try {
       const pf = parseFile(filePath, content);
-      if (pf) {
-        parsedCache.set(filePath, pf);
-      }
+      if (pf) parsedCache.set(filePath, pf);
     } catch (err) {
       console.error('[Analyze] Failed to parse file:', filePath, err);
       parseErrors++;
     }
   }
-  console.log('[Analyze] AST cache built with', parsedCache.size, 'files (parse errors:', parseErrors, ')');
+  if (parseErrors > 0) {
+    console.warn(`[Analyze] ${parseErrors} file(s) could not be parsed`);
+  }
 
-  // 2. Building import map from the cache to avoid double parse
+  // 2. Build import map from AST cache
   const reverseMap = new Map<string, number>();
   let importMap: Map<string, string[]> | null = null;
   try {
-    console.log('[Analyze] Building import map from cache...');
     importMap = buildImportMap(parsedCache);
-    console.log('[Analyze] Import map built with', importMap.size, 'files.');
     for (const deps of importMap.values()) {
       for (const dep of deps) {
         reverseMap.set(dep, (reverseMap.get(dep) ?? 0) + 1);
       }
     }
   } catch (err) {
-    console.error('[Analyze] Failed to build import map or reverse map:', err);
+    console.error('[Analyze] Failed to build import map:', err);
   }
 
-  // 3. Running per-file detectors
-  console.log('[Analyze] Running per-file detectors...');
+  // 3. Per-file detectors
   let detectorErrors = 0;
-  let fileCount = 0;
   for (const [filePath, pf] of parsedCache) {
-    fileCount++;
     onProgress?.(filePath);
     scannedFiles.push(filePath);
     try {
-      const fileIssues = runAllDetectors(pf);
-      issues.push(...fileIssues);
+      issues.push(...runAllDetectors(pf));
     } catch (e) {
       console.error('[Analyze] Detector error in', filePath, e);
       detectorErrors++;
     }
   }
-  console.log('[Analyze] Per-file detectors finished. Processed', fileCount, 'files with', detectorErrors, 'errors. Found', issues.length, 'issues.', 'Elapsed:', (Date.now() - t0).toFixed(0), 'ms');
+  if (detectorErrors > 0) {
+    console.warn(`[Analyze] ${detectorErrors} file(s) had detector errors`);
+  }
 
-  // 4. Running circular dependency detector using cache
+  // 4. Cross-file detectors
   try {
-    const t1 = Date.now();
-    console.log('[Analyze] Running circular dependency detector...');
-    const circDeps = detectCircularDeps(parsedCache);
-    console.log('[Analyze] Circular dependency detector finished. Found', circDeps.length, 'issues. Elapsed:', (Date.now() - t1).toFixed(0), 'ms');
-    issues.push(...circDeps);
+    issues.push(...detectCircularDeps(parsedCache));
   } catch (e) {
     console.error('[Analyze] Circular dependency detector crashed:', e);
   }
-
   try {
-    const t1 = Date.now();
-    console.log('[Analyze] Running cross-file detectors (like duplicateLogic)...');
-    const crossIssues = runCrossFileDetectors(parsedCache);
-    console.log('[Analyze] Cross-file detectors finished. Found', crossIssues.length, 'issues. Elapsed:', (Date.now() - t1).toFixed(0), 'ms');
-    issues.push(...crossIssues);
+    issues.push(...runCrossFileDetectors(parsedCache));
   } catch (e) {
     console.error('[Analyze] Cross-file detector crashed:', e);
   }
 
-  console.log('[Analyze] Enriching issues...');
+  // 5. Enrich
   let enriched = issues;
   try {
     enriched = enrichIssues(issues, reverseMap);
-    console.log('[Analyze] Issue enrichment finished.');
   } catch (e) {
     console.error('[Analyze] Failed to enrich issues:', e);
   }
 
-  console.log('[Analyze] runAnalysis complete. Total issues:', enriched.length, 'Elapsed:', (Date.now() - t0).toFixed(0), 'ms');
+  // Emit a single summary timing log (not on every file)
+  const elapsed = Date.now() - t0;
+  if (elapsed > 2000) {
+    console.warn(`[Analyze] Completed in ${elapsed}ms (${parsedCache.size} files, ${enriched.length} issues)`);
+  }
 
   const depsObj: Record<string, string[]> = {};
   if (importMap) {

@@ -13,6 +13,7 @@ import { getAllProjects, deleteProject, getHealthSnapshots } from '../lib/db'
 import { useTranslation } from '../hooks/useTranslation'
 import { getScoreColor, getDelta, C } from '../lib/health'
 import type { HealthSnapshot } from '../lib/health'
+import { useToast } from '../components/Toast'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,12 +126,7 @@ const ProjectCard: React.FC<{
             ? t('projects.lastAnalysis', { date: new Date(project.last_run).toLocaleDateString(lang === 'pt' ? 'pt-PT' : lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : lang === 'de' ? 'de-DE' : 'en-US') }) 
             : t('projects.neverAnalysed')}
         </span>
-        <div 
-          className={cn(
-            "flex gap-1.5 items-center",
-            hovered ? "opacity-100" : "opacity-0 pointer-events-none"
-          )}
-        >
+        <div className="flex gap-1.5 items-center touch-visible-actions" style={{ opacity: hovered ? 1 : undefined }}>
           <button
             onClick={onAnalyse}
             title={t('projects.analyseBtn')}
@@ -162,6 +158,7 @@ interface ProjectsPageProps {
 export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onOpenMonitor, onNavigate }) => {
   const { profile } = useAuth()
   const { t, lang } = useTranslation()
+  const { success: toastSuccess, error: toastError } = useToast()
   const [projects, setProjects] = useState<ProjectWithHealth[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -227,11 +224,23 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onOpe
     }
   }, [profile?.id])
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+
+  const handleDeleteRequest = (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
-    if (confirm(t('projects.confirmDelete'))) {
+    setDeleteConfirmId(id)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmId) return
+    const id = deleteConfirmId
+    setDeleteConfirmId(null)
+    try {
       await deleteProject(id)
       setProjects((prev: ProjectWithHealth[]) => prev.filter((p: ProjectWithHealth) => p.id !== id))
+      toastSuccess('Project deleted.')
+    } catch (err) {
+      toastError('Failed to delete project: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
   }
 
@@ -239,7 +248,52 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onOpe
 
   return (
     <div className="p-8 md:p-12 h-full overflow-y-auto bg-[var(--canvas-soft)] select-none box-sizing">
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } } .spin { animation: spin 1s linear infinite; }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg) } }
+        .spin { animation: spin 1s linear infinite; }
+        @media (hover: none) { .touch-visible-actions { opacity: 1 !important; } }
+      `}</style>
+
+      {/* In-app delete confirmation dialog */}
+      {deleteConfirmId && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          onClick={() => setDeleteConfirmId(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--card)', borderRadius: 12, padding: 28,
+              maxWidth: 360, width: '90%',
+              border: '1px solid var(--hairline)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.24)',
+            }}
+          >
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+              Delete project?
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--ink-muted)', marginBottom: 20 }}>
+              This will permanently remove the project and all its analysis history. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setDeleteConfirmId(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-sm"
+                style={{ background: 'var(--semantic-error)', color: '#fff', border: 'none' }}
+                onClick={handleDeleteConfirm}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
        {error && (
          <div className="p-3.5 bg-[var(--semantic-error)]/10 border border-[var(--semantic-error)]/25 rounded-sm text-xs text-[var(--semantic-error)] leading-relaxed mb-4">
@@ -284,7 +338,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onOpe
               key={p.id}
               project={p}
               onClick={() => onOpenMonitor(p.id, p)}
-              onDelete={(e: React.MouseEvent) => handleDelete(e, p.id)}
+              onDelete={(e: React.MouseEvent) => handleDeleteRequest(e, p.id)}
               onAnalyse={(e: React.MouseEvent) => { e.stopPropagation(); onOpenProject(p.id) }}
             />
           ))}

@@ -16,8 +16,21 @@ CREATE TABLE IF NOT EXISTS public.users (
   avatar_url TEXT,
   github_installation_id BIGINT,
   github_token TEXT,
+  plan TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro', 'team', 'enterprise')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration: add plan column if not present
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'plan'
+  ) THEN
+    ALTER TABLE public.users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'
+      CHECK (plan IN ('free', 'pro', 'team', 'enterprise'));
+  END IF;
+END $$;
 
 -- Projects table
 CREATE TABLE IF NOT EXISTS projects (

@@ -64,16 +64,11 @@ export function returnsJsx(node: TSESTree.Node): boolean {
       }
     },
   })
-  console.log(`[returnsJsx] node.type: ${node.type}, found: ${found}`)
   return found
 }
 
 export function isUseStateCall(node: TSESTree.Node | null | undefined): node is TSESTree.CallExpression {
-  if (!node) {
-    console.log(`[isUseStateCall] node is undefined`)
-    return false
-  }
-  console.log(`[isUseStateCall] node.type: ${node.type}, callee:`, node.type === 'CallExpression' ? node.callee.type : 'N/A')
+  if (!node) return false
   if (node.type !== AST_NODE_TYPES.CallExpression) return false
   if (node.callee.type === AST_NODE_TYPES.Identifier) return node.callee.name === 'useState'
   if (node.callee.type === AST_NODE_TYPES.TSInstantiationExpression && node.callee.expression.type === AST_NODE_TYPES.Identifier) {

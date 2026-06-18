@@ -11,13 +11,6 @@ export function runSafetyGate(proposal: TransformProposal, fileMap: Map<string, 
     return { ...proposal, safetyResult: direct }
   }
 
-  // Log WHY it failed for debugging
-  console.log(`[SafetyGate] ${proposal.type}(${proposal.id}) FAILED direct validation:`, {
-    syntaxOk: direct.syntaxOk,
-    errors: direct.errors,
-    warnings: direct.warnings,
-  })
-
   const reducedProposal = createConservativeProposal(proposal)
   if (!reducedProposal) {
     // Nothing to reduce to — return the failure with clear reasons
@@ -64,7 +57,6 @@ export function runSafetyGate(proposal: TransformProposal, fileMap: Map<string, 
     }
   }
 
-  console.log(`[SafetyGate] ${proposal.type}(${proposal.id}) reduced to conservative version`)
   return {
     ...reducedProposal,
     safetyResult: {

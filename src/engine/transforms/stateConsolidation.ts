@@ -32,7 +32,6 @@ export async function runStateConsolidation(fileMap: Map<string, string>, guidel
         if (states.length < 4) continue
 
         const groups = buildGroups(states, component.node, source)
-        console.log(`[stateConsolidation] file: ${filePath}, states.length: ${states.length}, groups:`, groups.map(g => g.map(s => s.stateName)))
         for (const group of groups.filter((candidate) => candidate.length >= 3)) {
           const hookName = await suggestSemanticHookName({
             filePath,

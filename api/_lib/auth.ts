@@ -11,9 +11,10 @@ async function getAuthenticatedProfile(authHeader: string | undefined) {
 
   if (error || !user) throw new Error('Invalid session')
 
+  // Fetch profile including the stored github_token
   const { data: profile, error: profileError } = await supabase
     .from('users')
-    .select('plan')
+    .select('plan, github_token')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -21,50 +22,28 @@ async function getAuthenticatedProfile(authHeader: string | undefined) {
     console.error(`[auth] Failed to fetch user profile for userId=${user.id}:`, profileError.message)
   }
 
-  // Retrieve GitHub provider_token if available
-  let providerToken: string | null = null
-  try {
-    const { data: sessionData, error: sessionError } = await supabase.auth.admin.getUserById(user.id)
-    if (!sessionError && sessionData?.user) {
-      const identities = sessionData.user.identities ?? []
-      const githubIdentity = identities.find((id: any) => id.provider === 'github')
-      providerToken = (githubIdentity as any)?.identity_data?.provider_token ?? null
-    }
-  } catch (err) {
-    console.error('[auth] Failed to fetch user identity for github token', err)
-  }
-
-  if (!providerToken) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      providerToken = session?.provider_token ?? null
-    } catch {
-      // Ignored
-    }
-  }
+  // The github_token column is populated by the frontend AuthContext
+  // when the user connects GitHub (stored from the Supabase OAuth session).
+  const githubToken: string | null = (profile as any)?.github_token ?? null
 
   return {
     user,
-    plan: profile?.plan ?? 'free',
-    githubToken: providerToken,
+    plan: (profile as any)?.plan ?? 'free',
+    githubToken,
   }
 }
 
 export async function getAuthenticatedUser(authHeader: string | undefined) {
   const { user, plan, githubToken } = await getAuthenticatedProfile(authHeader)
-  return {
-    user,
-    plan,
-    githubToken,
-  }
+  return { user, plan, githubToken }
 }
 
 export async function getAuthenticatedUserWithOptionalGitHub(authHeader: string | undefined) {
   return getAuthenticatedUser(authHeader)
 }
 
-/** Placeholder for legacy background jobs if called in OAuth mode */
-export async function getInstallationToken(installationId: number): Promise<string> {
-  console.warn(`[auth] getInstallationToken called with id ${installationId} under OAuth App configuration. Returning empty token.`)
+/** Not used under OAuth App configuration — kept for API surface compatibility */
+export async function getInstallationToken(_installationId: number): Promise<string> {
+  console.warn('[auth] getInstallationToken called but GitHub App is not configured. Returning empty token.')
   return ''
 }

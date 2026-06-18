@@ -13,7 +13,7 @@ interface AuthContextValue {
   signOut: () => Promise<void>
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>
-  installGitHubApp: () => void
+  connectGitHub: (redirectToPath?: string) => void
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ const AuthContext = createContext<AuthContextValue>({
   signOut: async () => { },
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
-  installGitHubApp: () => { },
+  connectGitHub: () => { },
 })
 
 export const useAuth = () => useContext(AuthContext)
@@ -205,12 +205,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [])
 
   // Conecta GitHub via Supabase OAuth (provider nativo)
-  const installGitHubApp = useCallback(() => {
+  const connectGitHub = useCallback((redirectToPath = '/repos') => {
     supabase.auth.signInWithOAuth({
       provider: 'github',
       options: {
         scopes: 'repo,user',
-        redirectTo: `${window.location.origin}/repos`,
+        redirectTo: `${window.location.origin}${redirectToPath}`,
       },
     })
   }, [])
@@ -263,6 +263,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         void syncAnalyticsIdentity(s.user.id, {
           email: s.user.email ?? undefined,
         })
+
+        // Persist the GitHub OAuth provider_token so the server can use it.
+        // provider_token is only present immediately after OAuth sign-in/sign-up.
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && s.provider_token) {
+          void supabase
+            .from('users')
+            .update({ github_token: s.provider_token })
+            .eq('id', s.user.id)
+        }
+
         loadProfileAsync(s)
       } else {
         setProfile(null)
@@ -289,7 +299,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [ensureProfileForSession, syncAnalyticsIdentity])
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, refreshProfile, signOut, signIn, signUp, installGitHubApp }}>
+    <AuthContext.Provider value={{ session, profile, loading, refreshProfile, signOut, signIn, signUp, connectGitHub }}>
       {children}
     </AuthContext.Provider>
   )

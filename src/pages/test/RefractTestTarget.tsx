@@ -1,147 +1,95 @@
-// RefractTestTarget.tsx — intentionally broken for Refract pipeline testing
+// Refract regression test fixture.
+// Intentionally contains code patterns that every detector should catch.
+// NOT referenced by any app route — excluded from tsconfig and production bundle.
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import axios from 'axios'
-import { Button } from '../../components/Button'
-import { Modal } from '../../components/Modal'
-import { ThemeProvider } from '../../components/ThemeProvider'
-import { formatDate } from '../../utils/formatDate'
-import { logger } from '../../utils/logger'
+import React, { useState, useEffect } from 'react'
 
-export default function Dashboard({ userId, theme, config, onSave, onDelete, onRefresh }: any) {
+// ── any-type / unsafe-cast ────────────────────────────────────────────────────
+function fetchData(): Promise<any> {
+  return fetch('/api/data').then((r) => r.json() as any)
+}
 
-  const [data, setData] = useState<any>(null)
-  const [loading, setLoading] = useState<any>(false)
-  const [error, setError] = useState<any>(null)
-  const [count, setCount] = useState<any>(0)
-  const [filter, setFilter] = useState<any>('')
-  const [sortBy, setSortBy] = useState<any>('name')
-  const [page, setPage] = useState<any>(1)
-  const [deadValue, setDeadValue] = useState<any>('never used again')
+// ── api-in-component / missing-error-boundary ─────────────────────────────────
+export default function Dashboard({ config, theme, locale, user, onUpdate, onDelete, onRefresh, onClose, onOpen, onToggle, onSelect }: any) {
+  // ── state-explosion ───────────────────────────────────────────────────────
+  const [dataList, setDataList] = useState<any[]>([])
+  const [dataCount, setDataCount] = useState(0)
+  const [dataLoading, setDataLoading] = useState(false)
+  const [dataError, setDataError] = useState<any>(null)
+  const [userName, setUserName] = useState('')
+  const [userEmail, setUserEmail] = useState('')
+  const [userRole, setUserRole] = useState('')
+  const [filterQuery, setFilterQuery] = useState('')
+  const [filterActive, setFilterActive] = useState(false)
+  const [sortField, setSortField] = useState('')
 
-  // runs on every render — no dependency array
+  // ── dead-state ─────────────────────────────────────────────────────────────
+  const [unusedFlag, setUnusedFlag] = useState(false)
+
+  // ── effect-no-deps ─────────────────────────────────────────────────────────
   useEffect(() => {
-    setLoading(true)
-    fetch(`/api/users/${userId}`)
-      .then((res) => res.json())
-      .then((d: any) => {
-        setData(d)
-        setLoading(false)
-      })
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((d) => setDataList(d))
+
+    const timer = setInterval(() => setDataCount((c) => c + 1), 1000)
+    // ── memory-leak: interval not cleared ────────────────────────────────────
   })
 
-  // stale closure — reads filter and sortBy but deps array is empty
-  useEffect(() => {
-    console.log('syncing:', filter, sortBy)
-    setPage(1)
-  }, [])
-
-  // second stale closure — reads page and count but deps array is empty
-  useEffect(() => {
-    console.log('page drift:', page, count)
-    if (page > 1) {
-      setCount(count + 1)
-    }
-  }, [])
-
-  // memory leak — two event listeners with no cleanup
-  useEffect(() => {
-    window.addEventListener('resize', () => {
-      setCount((c: any) => c + 1)
-    })
-    document.addEventListener('click', () => {
-      setFilter('')
-    })
-  }, [])
-
-  // api calls directly inside the component
-  const handleSave = async (item: any) => {
-    const res = await fetch('/api/items', {
-      method: 'POST',
-      body: JSON.stringify(item),
-    })
-    const saved = await res.json()
-    setData(saved)
+  // ── duplicate-logic (block 1) ────────────────────────────────────────────
+  function formatUserName(first: string, last: string) {
+    const trimmedFirst = first.trim()
+    const trimmedLast = last.trim()
+    return `${trimmedFirst} ${trimmedLast}`.toUpperCase()
   }
 
-  const handleDelete = async (id: any) => {
-    await axios.delete(`/api/items/${id}`)
-    setData((prev: any) => prev.filter((i: any) => i.id !== id))
+  // ── duplicate-logic (block 2) ────────────────────────────────────────────
+  function formatContactName(first: string, last: string) {
+    const trimmedFirst = first.trim()
+    const trimmedLast = last.trim()
+    return `${trimmedFirst} ${trimmedLast}`.toUpperCase()
   }
 
-  // duplicate logic — identical map/filter/sort in two functions
-  function processUsers(users: any[]) {
-    return users
-      .filter((u) => u.active)
-      .map((u) => ({ ...u, label: u.name.toUpperCase() }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }
-
-  function processItems(items: any[]) {
-    return items
-      .filter((i) => i.active)
-      .map((i) => ({ ...i, label: i.name.toUpperCase() }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }
-
-  function processArchivedUsers(users: any[]) {
-    return users
-      .filter((u) => u.active)
-      .map((u) => ({ ...u, label: u.name.toUpperCase() }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }
-
-  function renderHeader(title: any, subtitle: any) {
+  // ── prop-drilling helper ──────────────────────────────────────────────────
+  function renderCard(cardUser: any, cardConfig: any, cardTheme: any, cardLocale: any, cardOnUpdate: any) {
     return (
-      <div className="header">
-        <h1>{title}</h1>
-        <p>{subtitle}</p>
-        <span>{count}</span>
-        <Button theme={theme} config={config} label="Refresh" onClick={onRefresh} />
+      <div style={{ background: cardTheme?.bg }}>
+        <span>{cardUser?.name}</span>
+        <span>{cardConfig?.title}</span>
+        <span>{cardLocale?.lang}</span>
+        <button onClick={() => cardOnUpdate(cardUser)}>Update</button>
       </div>
     )
   }
 
-  function renderUserCard(user: any) {
-    return (
-      <div key={user.id} className="card">
-        <img src={user.avatar as string} alt={user.name as string} />
-        <h3>{user.name as string}</h3>
-        <p>{user.email as string}</p>
-        <span>{formatDate(user.createdAt)}</span>
-        <Button theme={theme} config={config} label="Delete" onClick={() => onDelete(user.id)} />
-      </div>
-    )
-  }
-
-  function renderFilters(currentFilter: any, currentSort: any) {
-    return (
-      <div className="filters">
-        <input value={currentFilter} onChange={(e) => setFilter(e.target.value)} />
-        <select value={currentSort} onChange={(e) => setSortBy(e.target.value)}>
-          <option value="name">Name</option>
-          <option value="date">Date</option>
-        </select>
-        <Button theme={theme} config={config} label="Reset" onClick={() => { setFilter(''); setSortBy('name') }} />
-      </div>
-    )
-  }
-
-  if (loading) return <div>Loading...</div>
-
+  // ── oversized-component: intentionally long render ────────────────────────
   return (
-    <div className="dashboard">
-      {renderHeader('Dashboard', `Welcome ${userId}`)}
-      {renderFilters(filter, sortBy)}
-      <div className="grid">
-        {(data?.users ?? []).map((user: any) => renderUserCard(user))}
-      </div>
-      <div className="pagination">
-        <button onClick={() => setPage((p: any) => p - 1)}>Prev</button>
-        <span>Page {page}</span>
-        <button onClick={() => setPage((p: any) => p + 1)}>Next</button>
-      </div>
-      <button onClick={() => handleSave({ name: 'test' as any })}>Save</button>
+    <div>
+      <h1>{formatUserName('John', 'Doe')}</h1>
+      <p>{formatContactName('Jane', 'Smith')}</p>
+      {renderCard(user, config, theme, locale, onUpdate)}
+      <ul>
+        {dataList.map((item: any) => (
+          <li key={item.id}>
+            <span>{item.name}</span>
+            <button onClick={() => onDelete(item.id)}>Delete</button>
+            <button onClick={() => onRefresh(item.id)}>Refresh</button>
+            <button onClick={() => onClose(item.id)}>Close</button>
+            <button onClick={() => onOpen(item.id)}>Open</button>
+            <button onClick={() => onToggle(item.id)}>Toggle</button>
+            <button onClick={() => onSelect(item.id)}>Select</button>
+          </li>
+        ))}
+      </ul>
+      <input value={filterQuery} onChange={(e) => setFilterQuery(e.target.value)} />
+      <input value={userName} onChange={(e) => setUserName(e.target.value)} />
+      <input value={userEmail} onChange={(e) => setUserEmail(e.target.value)} />
+      <input value={userRole} onChange={(e) => setUserRole(e.target.value)} />
+      <span>{dataError?.message}</span>
+      <span>{dataLoading ? 'Loading…' : `${dataCount} items`}</span>
+      <span>{sortField}</span>
+      <span>{filterActive ? 'active' : 'inactive'}</span>
+      <span style={{ display: 'none' }}>{String(unusedFlag)}</span>
     </div>
   )
 }

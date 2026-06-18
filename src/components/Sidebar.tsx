@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { cn } from '../lib/utils';
 import { 
   LayoutDashboard, 
@@ -10,9 +10,10 @@ import {
   User,
   Globe,
   ArrowLeft,
-  CreditCard,
   ShieldAlert,
-  Mail
+  Mail,
+  Menu,
+  X,
 } from 'lucide-react';
 import { LogoMark } from './Logo';
 import { useAuth } from '../lib/AuthContext';
@@ -35,6 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { profile, session, signOut } = useAuth();
   const { t } = useTranslation();
+  const [mobileOpen, setMobileOpen] = useState(false);
   
   const userEmail = session?.user?.email ?? '';
   const userName  = profile?.name ?? userEmail.split('@')[0] ?? 'User';
@@ -54,8 +56,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'danger', label: t('settings.tabs.danger'), icon: ShieldAlert },
   ];
 
-  return (
-    <div className="flex h-screen w-[240px] shrink-0 flex-col bg-[var(--canvas)] border-r border-[var(--hairline)] select-none">
+  const handleNavigate = (page: Page) => {
+    onNavigate(page);
+    setMobileOpen(false);
+  };
+
+  const handleSettingsTabChange = (tab: string) => {
+    onSettingsTabChange?.(tab);
+    setMobileOpen(false);
+  };
+
+  const sidebarContent = (
+    <div className="flex h-full flex-col bg-[var(--canvas)] border-r border-[var(--hairline)] select-none">
       {/* Header */}
       <div className="flex h-[64px] shrink-0 items-center gap-3 px-6 border-b border-[var(--hairline)]">
         <LogoMark size={20} className="text-[var(--ink)]" />
@@ -65,6 +77,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <span className="font-mono text-[10px] tracking-wider text-[var(--ink-muted)] bg-[var(--canvas-soft-2)] border border-[var(--hairline)] rounded-sm px-1.5 py-0.5 leading-none">
           Beta
         </span>
+        {/* Close button — mobile only */}
+        <button
+          className="ml-auto md:hidden p-1 rounded-sm text-[var(--ink-muted)] hover:text-[var(--ink)]"
+          onClick={() => setMobileOpen(false)}
+          aria-label="Close menu"
+        >
+          <X size={18} />
+        </button>
       </div>
       
       {/* Main Navigation */}
@@ -72,7 +92,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {activePage === 'settings' ? (
           <>
             <button
-              onClick={() => onNavigate('home')}
+              onClick={() => handleNavigate('home')}
               className="flex w-full items-center gap-3 px-3 py-2.5 text-[14px] font-medium text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[var(--canvas-soft)] rounded-[8px] outline-none mb-4 border border-transparent hover:border-[var(--hairline)]"
             >
               <ArrowLeft size={16} />
@@ -90,7 +110,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               return (
                 <button
                   key={item.id}
-                  onClick={() => onSettingsTabChange?.(item.id)}
+                  onClick={() => handleSettingsTabChange(item.id)}
                   className={cn(
                     "relative flex w-full items-center gap-3 px-4 py-2 text-[14px] outline-none rounded-sm font-sans",
                     isActive 
@@ -120,7 +140,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               return (
                 <button
                   key={item.id}
-                  onClick={() => onNavigate(item.id as Page)}
+                  onClick={() => handleNavigate(item.id as Page)}
                   className={cn(
                     "relative flex w-full items-center gap-3 px-4 py-2 text-[14px] outline-none rounded-sm font-sans",
                     isActive 
@@ -144,7 +164,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="shrink-0 p-4 space-y-2 border-t border-[var(--hairline)]">
         {activePage !== 'settings' && (
           <button
-            onClick={() => onNavigate('settings')}
+            onClick={() => handleNavigate('settings')}
             className="flex w-full items-center gap-3 px-3 py-2 text-[14px] outline-none rounded-sm text-[var(--ink-muted)] hover:bg-[var(--canvas-soft-2)] hover:text-[var(--ink)]"
           >
             <Settings size={16} />
@@ -194,5 +214,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar — always visible ≥768px */}
+      <aside className="hidden md:flex h-screen w-[240px] shrink-0 flex-col">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile hamburger top bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center h-[56px] px-4 bg-[var(--canvas)] border-b border-[var(--hairline)]">
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="p-2 rounded-sm text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[var(--canvas-soft)]"
+          aria-label="Open menu"
+        >
+          <Menu size={20} />
+        </button>
+        <div className="flex items-center gap-2 ml-3">
+          <LogoMark size={18} className="text-[var(--ink)]" />
+          <span className="font-normal text-[17px] tracking-tight text-[var(--ink)]">Refract</span>
+        </div>
+      </div>
+
+      {/* Mobile sidebar drawer */}
+      {mobileOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="md:hidden fixed inset-0 z-40 bg-black/40"
+            onClick={() => setMobileOpen(false)}
+          />
+          {/* Drawer */}
+          <aside
+            className="md:hidden fixed top-0 left-0 h-full w-[280px] z-50 flex flex-col shadow-xl"
+          >
+            {sidebarContent}
+          </aside>
+        </>
+      )}
+    </>
   );
 };

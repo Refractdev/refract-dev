@@ -31,7 +31,6 @@ export async function runApiCentralization(fileMap: Map<string, string>, guideli
     try {
       const ast = parseSource(source, filePath)
       const apiCalls = getComponents(ast.body).flatMap((component) => collectApiCalls(component.node, source, component.name))
-      console.log(`[apiCentralization] file: ${filePath}, apiCalls.length: ${apiCalls.length}`)
       if (apiCalls.length === 0) continue
 
       const generatedCalls = apiCalls.map((apiCall, index) => ({

@@ -21,12 +21,12 @@ import {
   X
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
-import { GITHUB_APP_URL } from '../lib/githubApp'
 import { useTheme } from '../lib/ThemeContext'
 
 import { supabase, UserProfile } from '../lib/supabase'
 import { getAllProjects, getSetting, setSetting } from '../lib/db'
 import { useTranslation } from '../hooks/useTranslation'
+import { useToast } from '../components/Toast'
 
 interface SettingsPageProps {
   activeTab: string
@@ -43,9 +43,10 @@ const AVATAR_GRADIENTS = [
 ]
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChange }) => {
-  const { profile, session, refreshProfile, signOut } = useAuth()
+  const { profile, session, refreshProfile, signOut, connectGitHub } = useAuth()
   const { theme, setTheme } = useTheme()
   const { t, lang } = useTranslation()
+  const { success: toastSuccess, error: toastError, info: toastInfo } = useToast()
 
   // Profile Form States
   const [name, setName] = useState('')
@@ -142,8 +143,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
       if (error) throw error
       await refreshProfile()
       setNameSaved(true)
+      toastSuccess('Name updated.')
     } catch (err) {
-      console.error('Failed to update name:', err)
+      console.error('[settings] Failed to update name:', err)
+      toastError('Failed to save name. Please try again.')
     } finally {
       setIsSavingName(false)
     }
@@ -158,8 +161,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
 
       if (error) throw error
       await refreshProfile()
+      toastSuccess('Avatar updated.')
     } catch (err) {
-      console.error('Failed to save avatar:', err)
+      console.error('[settings] Failed to save avatar:', err)
+      toastError('Failed to update avatar. Please try again.')
     }
   }
 
@@ -186,8 +191,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
       if (error) throw error
       await refreshProfile()
       setLanguageSaved(true)
+      toastSuccess('Language updated.')
     } catch (err) {
-      console.error('Failed to update language:', err)
+      console.error('[settings] Failed to update language:', err)
+      toastError('Failed to save language preference.')
     } finally {
       setIsSavingLanguage(false)
     }
@@ -207,7 +214,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
         )
       )
     } catch (err) {
-      console.error('Failed to save project guideline:', err)
+      console.error('[settings] Failed to save project guideline:', err)
+      toastError('Failed to save guideline. Please try again.')
       setGuidelinesProjects(prev =>
         prev.map(p => (p.project.id === projectId ? { ...p, isSaving: false } : p))
       )
@@ -218,8 +226,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
     setIsSavingGlobal(true)
     try {
       await setSetting('global_guidelines', globalGuidelines)
+      toastSuccess('Guidelines saved.')
     } catch (err) {
-      console.error('Failed to save global guidelines:', err)
+      console.error('[settings] Failed to save global guidelines:', err)
+      toastError('Failed to save guidelines. Please try again.')
     } finally {
       setTimeout(() => setIsSavingGlobal(false), 500)
     }
@@ -605,7 +615,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
         )
 
       case 'integrations':
-        const isGitHubConnected = Boolean(profile.github_installation_id)
+        const isGitHubConnected = Boolean(
+          session?.user?.identities?.some(id => id.provider === 'github') ||
+          (session?.user?.app_metadata?.providers as string[] | undefined)?.includes('github')
+        )
         return (
           <div className="space-y-6 max-w-3xl page-enter">
             {/* Main GitHub card */}
@@ -630,7 +643,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                 <div className="p-4 bg-[var(--canvas-soft)] border border-[var(--hairline)] rounded-xl space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-[var(--ink-muted)]">{t('settings.integrations.connectedAs')}</span>
-                    <span className="font-semibold text-[var(--ink)] font-mono">{profile.github_installation_id}</span>
+                    <span className="font-semibold text-[var(--ink)] font-mono">
+                      {session?.user?.user_metadata?.preferred_username || session?.user?.email}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-[var(--ink-muted)]">{t('settings.integrations.repoSync')}</span>
@@ -642,7 +657,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
               <button
                 className={`btn ${isGitHubConnected ? 'btn-secondary' : 'btn-primary'}`}
                 onClick={() => {
-                  window.location.href = GITHUB_APP_URL
+                  connectGitHub('/settings')
                 }}
                 style={{ gap: 8 }}
               >
@@ -683,7 +698,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
 
                     <button
                       className="btn btn-secondary btn-sm mt-4 w-full"
-                      onClick={() => window.alert(t('common.comingSoon'))}
+                      onClick={() => toastInfo(t('common.comingSoon'))}
                     >
                       {t('common.comingSoon')}
                     </button>

@@ -2,16 +2,7 @@ import { supabase } from './supabase'
 import type { Project, Activity } from '../shared/types'
 import { deleteProjectFiles } from './fileStore'
 
-export const HARDCODED_PROJECT: Project = {
-  id: 'refract-test-project-id',
-  name: 'refract-test-project',
-  path: '/tmp/refract-test-project',
-  repo: 'https://github.com/luma-founder1/refract-test-project',
-  branch: 'main',
-  status: 'Refracted',
-  created_at: '2026-05-28T12:00:00.000Z',
-  last_run: '2026-06-07T12:00:00.000Z',
-};
+// No hardcoded project
 
 // ─── Guard + Timeout ──────────────────────────────────────────────────────────
 //
@@ -39,52 +30,31 @@ function withTimeout<T = any>(promise: any, ms = QUERY_TIMEOUT_MS): Promise<T> {
 // This avoids race conditions during token refresh and ensures RLS filtering.
 
 export async function getRecentProjects(userId: string, limit = 6): Promise<Project[]> {
-  try {
-    const { data, error } = await withTimeout(
-      supabase
-        .from('projects')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(limit)
-    )
-    if (error) throw error
-    const list = data || []
-    if (!list.some((p: Project) => p.id === HARDCODED_PROJECT.id)) {
-      list.unshift(HARDCODED_PROJECT)
-    }
-    return list
-  } catch (err) {
-    console.warn('Failed to load recent projects from DB, using fallback.', err)
-    return [HARDCODED_PROJECT]
-  }
+  const { data, error } = await withTimeout(
+    supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+  )
+  if (error) throw error
+  return data || []
 }
 
 export async function getAllProjects(userId: string): Promise<Project[]> {
-  try {
-    const { data, error } = await withTimeout(
-      supabase
-        .from('projects')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-    )
-    if (error) throw error
-    const list = data || []
-    if (!list.some((p: Project) => p.id === HARDCODED_PROJECT.id)) {
-      list.unshift(HARDCODED_PROJECT)
-    }
-    return list
-  } catch (err) {
-    console.warn('Failed to load projects from DB, using fallback.', err)
-    return [HARDCODED_PROJECT]
-  }
+  const { data, error } = await withTimeout(
+    supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+  )
+  if (error) throw error
+  return data || []
 }
 
 export async function getProject(id: string): Promise<Project | null> {
-  if (id === HARDCODED_PROJECT.id) {
-    return HARDCODED_PROJECT;
-  }
   const { data, error } = await withTimeout(
     supabase
       .from('projects')
@@ -214,61 +184,6 @@ export async function saveHealthSnapshot(
 }
 
 export async function getHealthSnapshots(projectId: string, userId: string, limit = 10): Promise<HealthSnapshot[]> {
-  if (projectId === HARDCODED_PROJECT.id) {
-    const daysAgo = (d: number) => new Date(new Date('2026-06-07T12:00:00.000Z').getTime() - d * 24 * 60 * 60 * 1000).toISOString();
-    return [
-      {
-        id: 'snap-5',
-        project_id: HARDCODED_PROJECT.id,
-        score: 78,
-        issue_count: 28,
-        high: 1,
-        medium: 5,
-        low: 18,
-        timestamp: daysAgo(0),
-      },
-      {
-        id: 'snap-4',
-        project_id: HARDCODED_PROJECT.id,
-        score: 66,
-        issue_count: 44,
-        high: 3,
-        medium: 12,
-        low: 22,
-        timestamp: daysAgo(3),
-      },
-      {
-        id: 'snap-3',
-        project_id: HARDCODED_PROJECT.id,
-        score: 60,
-        issue_count: 48,
-        high: 4,
-        medium: 14,
-        low: 26,
-        timestamp: daysAgo(5),
-      },
-      {
-        id: 'snap-2',
-        project_id: HARDCODED_PROJECT.id,
-        score: 52,
-        issue_count: 55,
-        high: 5,
-        medium: 17,
-        low: 28,
-        timestamp: daysAgo(7),
-      },
-      {
-        id: 'snap-1',
-        project_id: HARDCODED_PROJECT.id,
-        score: 45,
-        issue_count: 68,
-        high: 6,
-        medium: 20,
-        low: 36,
-        timestamp: daysAgo(10),
-      }
-    ];
-  }
   const { data, error } = await withTimeout(
     supabase
       .from('health_snapshots')
@@ -286,21 +201,6 @@ export async function persistProjectHealth(
   summary: { total: number; high: number; medium: number; low: number },
   status: Project['status'] = 'Refracted'
 ): Promise<HealthSnapshot | null> {
-  if (projectId === HARDCODED_PROJECT.id) {
-    const score = Math.max(0, Math.min(100,
-      100 - (summary.high * 10) - (summary.medium * 4) - (summary.low * 1)
-    ))
-    return {
-      id: 'snapshot-id-1',
-      project_id: HARDCODED_PROJECT.id,
-      score,
-      issue_count: summary.total,
-      high: summary.high,
-      medium: summary.medium,
-      low: summary.low,
-      timestamp: new Date().toISOString(),
-    };
-  }
   const score = Math.max(0, Math.min(100,
     100 - (summary.high * 10) - (summary.medium * 4) - (summary.low * 1)
   ))
@@ -391,10 +291,6 @@ export async function saveDecision(
   decision: string,
   applied: number = 0
 ): Promise<void> {
-  if (projectId === HARDCODED_PROJECT.id) {
-    console.log('Mock saveDecision for refract-test-project-id');
-    return;
-  }
   const { error } = await withTimeout(
     supabase
       .from('project_decisions')
@@ -428,9 +324,6 @@ export async function getDecision(projectId: string, issueSignature: string): Pr
 }
 
 export async function getDecisionHistory(projectId: string): Promise<ProjectDecision[]> {
-  if (projectId === HARDCODED_PROJECT.id) {
-    return [];
-  }
   const { data, error } = await withTimeout(
     supabase
       .from('project_decisions')

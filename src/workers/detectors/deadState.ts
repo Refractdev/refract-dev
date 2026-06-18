@@ -83,10 +83,6 @@ export function detectDeadState(pf: ParsedFile): Issue[] {
       counts.set(id.name, (counts.get(id.name) ?? 0) + 1);
     }
 
-    for (const state of states) {
-      console.log(`[deadState] varName: ${state.varName}, varCount: ${counts.get(state.varName) ?? 0}, setterCount: ${counts.get(state.setterName) ?? 0}`)
-    }
-
     // 1. Dead State: state variable and setter are only referenced in the declaration itself (count === 1)
     for (const state of states) {
       const varCount = counts.get(state.varName) ?? 0;

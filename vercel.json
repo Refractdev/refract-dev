@@ -40,6 +40,9 @@
     },
     "api/analysis.ts": {
       "maxDuration": 60
+    },
+    "api/webhooks/github.ts": {
+      "maxDuration": 10
     }
   },
   "crons": [

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getAdminSupabaseClient } from './_lib/supabase'
+import { checkRateLimit, applyRateLimitHeaders } from './_lib/ratelimit'
 
 const GITHUB_API_BASE = 'https://api.github.com'
 
@@ -216,6 +217,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = req.query.action as string
 
   try {
+    const supabaseAdmin = getAdminSupabaseClient()
+    const authHeader = req.headers.authorization
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing authorization header' })
+    }
+    const accessToken = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(accessToken)
+    if (userError || !user) return res.status(401).json({ error: 'Invalid session' })
+
+    const { data: profile } = await supabaseAdmin
+      .from('users')
+      .select('plan')
+      .eq('id', user.id)
+      .maybeSingle()
+    const plan: string = (profile as any)?.plan ?? 'free'
+
+    const rateResult = await checkRateLimit(user.id, plan, 'github')
+    applyRateLimitHeaders(res, rateResult)
+    if (!rateResult.success) {
+      return res.status(429).json({
+        error: 'Too many requests. Please wait before trying again.',
+        reset: rateResult.reset,
+      })
+    }
+
     const token = await getGitHubToken(req.headers.authorization)
 
     switch (action) {

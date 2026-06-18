@@ -50,8 +50,10 @@ async function trackEvent(event: string, props: Record<string, unknown> = {}): P
 async function handleGet(req: VercelRequest, res: VercelResponse) {
   try {
     // Authenticate
+    let userId: string
     try {
-      await getAuthenticatedUser(req.headers.authorization)
+      const auth = await getAuthenticatedUser(req.headers.authorization)
+      userId = auth.user.id
     } catch {
       return res.status(401).json({ error: 'Autenticação necessária' })
     }
@@ -62,6 +64,20 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
     }
 
     const supabase = getAdminSupabaseClient()
+
+    // Verify user owns this project before returning any data
+    const { data: project, error: projectError } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (projectError) {
+      return res.status(500).json({ error: 'Failed to verify project ownership' })
+    }
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
 
     // Load recent analysis results (max 20)
     const { data: results, error } = await supabase
@@ -89,9 +105,11 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
   try {
     // ── Authenticate ────────────────────────────────────────────────────────
     let githubToken: string | null = null
+    let userId: string
     try {
       const auth = await getAuthenticatedUser(req.headers.authorization)
       githubToken = auth.githubToken
+      userId = auth.user.id
     } catch {
       return res.status(401).json({ error: 'Autenticação necessária' })
     }
@@ -108,7 +126,8 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       .from('projects')
       .select('id')
       .eq('id', projectId)
-      .single()
+      .eq('user_id', userId)
+      .maybeSingle()
     throwIfDbError(projectError, '[analysis/run] Failed to load project')
 
     if (!project) {

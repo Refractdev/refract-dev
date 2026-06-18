@@ -7,7 +7,7 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "warn",
-        "noConsoleLog": "warn"
+        "noConsoleLog": "error"
       },
       "style": {
         "useNamingConvention": "warn"
