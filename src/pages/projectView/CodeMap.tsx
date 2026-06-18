@@ -21,17 +21,19 @@ import type { AnalysisIssue } from '../../shared/types'
 import type { Decision } from './types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+// CodeMap is a dark visualization widget regardless of app theme — CSS vars resolve
+// from the dark theme context injected on the wrapper element.
 const C = {
-  bg: '#0a0a0a',
-  surface: '#111111',
-  border: '#1a1a1a',
-  blue: '#3B82F6',
-  muted: '#888888',
-  text: '#ffffff',
-  green: '#4ade80',
-  yellow: '#facc15',
-  red: '#ef4444',
-  subtle: '#161616',
+  bg:      'var(--canvas)',
+  surface: 'var(--card)',
+  border:  'var(--hairline)',
+  blue:    'var(--primary)',
+  muted:   'var(--ink-muted)',
+  text:    'var(--ink)',
+  green:   'var(--semantic-success)',
+  yellow:  'var(--semantic-warning)',
+  red:     'var(--semantic-error)',
+  subtle:  'var(--surface-strong)',
 }
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
@@ -92,9 +94,9 @@ const HEALTH_COLOR: Record<Health, string> = {
 }
 
 const HEALTH_BG: Record<Health, string> = {
-  good:     '#0d1f0d',
-  warning:  '#1a1500',
-  critical: '#1f0d0d',
+  good:     'color-mix(in srgb, var(--semantic-success) 12%, transparent)',
+  warning:  'color-mix(in srgb, var(--semantic-warning) 12%, transparent)',
+  critical: 'color-mix(in srgb, var(--semantic-error) 12%, transparent)',
 }
 
 // ─── Custom Node ──────────────────────────────────────────────────────────────
@@ -122,9 +124,9 @@ const FileNode = ({ data }: { data: any }) => {
       transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
       cursor: 'pointer',
     }}>
-      <Handle type="target" position={Position.Top} style={{ background: '#333', border: 'none', width: 6, height: 6 }} />
+      <Handle type="target" position={Position.Top} style={{ background: 'var(--hairline)', border: 'none', width: 6, height: 6 }} />
 
-      <div style={{ width: 32, height: 32, borderRadius: 8, background: '#161616', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--surface-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
         {isComponent
           ? <FileCode size={16} color={color} />
           : isType
@@ -152,7 +154,7 @@ const FileNode = ({ data }: { data: any }) => {
         </div>
       )}
 
-      <Handle type="source" position={Position.Bottom} style={{ background: '#333', border: 'none', width: 6, height: 6 }} />
+      <Handle type="source" position={Position.Bottom} style={{ background: 'var(--hairline)', border: 'none', width: 6, height: 6 }} />
     </div>
   )
 }
@@ -218,7 +220,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
           id: `${source}->${target}`,
           source,
           target,
-          style: { stroke: '#333', strokeWidth: 1, opacity: 0.8 },
+          style: { stroke: 'var(--hairline)', strokeWidth: 1, opacity: 0.8 },
         })
       }
     }
@@ -300,7 +302,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
       })))
       setEdges((es) => es.map((e) => ({
         ...e,
-        style: { ...e.style, stroke: '#333', strokeWidth: 1, opacity: 0.8 },
+        style: { ...e.style, stroke: 'var(--hairline)', strokeWidth: 1, opacity: 0.8 },
         animated: false,
       })))
     }
@@ -326,7 +328,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
     })))
     setEdges((es) => es.map((e) => ({
       ...e,
-      style: { ...e.style, stroke: '#333', strokeWidth: 1, opacity: 0.8 },
+      style: { ...e.style, stroke: 'var(--hairline)', strokeWidth: 1, opacity: 0.8 },
       animated: false,
     })))
     fitView({ duration: 800 })
@@ -358,7 +360,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
 
   if (isEmpty) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, color: C.muted, fontSize: 12 }}>
-      Nenhum grafo de dependências disponível.
+      No dependency graph available.
     </div>
   )
 
@@ -366,8 +368,8 @@ const CodeMapInner: React.FC<CodeMapProps & {
     <div style={{ flex: 1, height: '100%', background: C.bg, position: 'relative' }}>
       {(truncated || unresolvedCount > 0) && (
         <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 100, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', color: C.muted, fontSize: 11 }}>
-          {truncated && <div>Mapa parcial: limite de ficheiros atingido.</div>}
-          {unresolvedCount > 0 && <div>{unresolvedCount} import(s) não resolvido(s).</div>}
+          {truncated && <div>Partial map: file limit reached.</div>}
+          {unresolvedCount > 0 && <div>{unresolvedCount} unresolved import(s).</div>}
         </div>
       )}
       <ReactFlow
@@ -381,7 +383,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="#161616" gap={24} variant={BackgroundVariant.Dots} />
+        <Background color="var(--hairline)" gap={24} variant={BackgroundVariant.Dots} />
         <Controls showInteractive={false} style={{ background: C.surface, border: `1px solid ${C.border}` }} />
         <MiniMap style={{ background: C.surface, border: `1px solid ${C.border}` }} nodeColor={(n: any) => HEALTH_COLOR[n.data.health as Health]} />
       </ReactFlow>
@@ -403,42 +405,42 @@ const CodeMapInner: React.FC<CodeMapProps & {
           {/* Blast Radius Info */}
           {blastRadiusInfo && (
             <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginBottom: 12 }}>
-              <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Blast Radius de Impacto</p>
+              <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Blast Radius</p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                <div style={{ background: 'var(--surface-strong)', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
                   <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{blastRadiusInfo.level1}</span>
-                  <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>1º Nível (direto)</p>
+                  <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>Level 1 (direct)</p>
                 </div>
-                <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                <div style={{ background: 'var(--surface-strong)', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
                   <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{blastRadiusInfo.level2}</span>
-                  <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>2º Nível (indireto)</p>
+                  <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>Level 2 (indirect)</p>
                 </div>
               </div>
               <p style={{ fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 6 }}>
-                {blastRadiusInfo.total} ficheiro(s) afetados
+                {blastRadiusInfo.total} file(s) affected
               </p>
             </div>
           )}
           
           {/* Real Workspace Actions & Issues List */}
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-            <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Issues no Ficheiro</p>
+            <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>File Issues</p>
             
             {selectedIssues.length === 0 ? (
-              <div style={{ background: 'rgba(74,222,128,0.05)', border: `1px solid ${C.green}20`, borderRadius: 6, padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ background: 'color-mix(in srgb, var(--semantic-success) 8%, transparent)', border: `1px solid color-mix(in srgb, var(--semantic-success) 25%, transparent)`, borderRadius: 6, padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CheckCircle size={14} color={C.green} />
-                <span style={{ fontSize: 11, color: C.green, fontWeight: 500 }}>Ficheiro limpo de anomalias</span>
+                <span style={{ fontSize: 11, color: C.green, fontWeight: 500 }}>No issues in this file</span>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {selectedIssues.map(i => {
                   const decision = decisions[i.id]
                   return (
-                    <div key={i.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, background: '#161616', border: `1px solid ${C.border}`, borderRadius: 6, padding: 10 }}>
+                    <div key={i.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--surface-strong)', border: `1px solid ${C.border}`, borderRadius: 6, padding: 10 }}>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
                         <div style={{ width: 6, height: 6, borderRadius: '50%', background: i.impact === 'High' ? C.red : C.yellow, marginTop: 4, flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4, margin: 0 }}>{i.problem}</p>
+                          <p style={{ fontSize: 11, color: 'var(--ink-muted)', lineHeight: 1.4, margin: 0 }}>{i.problem}</p>
                           <p style={{ fontSize: 9, color: C.muted, fontFamily: 'monospace', margin: '2px 0 0 0' }}>L{i.lineStart}–{i.lineEnd} · {i.impact}</p>
                         </div>
                       </div>
@@ -454,7 +456,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
                             padding: '2px 6px',
                             borderRadius: 4,
                           }}>
-                            {decision === 'accepted' ? '✓ Aceite' : '✗ Rejeitado'}
+                            {decision === 'accepted' ? '✓ Accepted' : '✗ Rejected'}
                           </span>
                         ) : (
                           <>
@@ -462,8 +464,8 @@ const CodeMapInner: React.FC<CodeMapProps & {
                               <button
                                 onClick={(e) => { e.stopPropagation(); onAcceptIssue(i) }}
                                 style={{ 
-                                  background: 'rgba(74,222,128,0.1)', 
-                                  border: `1px solid ${C.green}40`, 
+                                  background: 'color-mix(in srgb, var(--semantic-success) 12%, transparent)', 
+                                  border: '1px solid color-mix(in srgb, var(--semantic-success) 30%, transparent)', 
                                   color: C.green,
                                   borderRadius: 4, 
                                   padding: '2px 8px', 
@@ -472,18 +474,16 @@ const CodeMapInner: React.FC<CodeMapProps & {
                                   fontWeight: 600,
                                   transition: 'all 0.12s ease'
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(74,222,128,0.2)' }}
-                                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(74,222,128,0.1)' }}
                               >
-                                Aceitar
+                                Accept
                               </button>
                             )}
                             {onRejectIssue && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); onRejectIssue(i) }}
                                 style={{ 
-                                  background: 'rgba(239,68,68,0.1)', 
-                                  border: `1px solid ${C.red}40`, 
+                                  background: 'color-mix(in srgb, var(--semantic-error) 12%, transparent)', 
+                                  border: '1px solid color-mix(in srgb, var(--semantic-error) 30%, transparent)', 
                                   color: C.red,
                                   borderRadius: 4, 
                                   padding: '2px 8px', 
@@ -492,10 +492,8 @@ const CodeMapInner: React.FC<CodeMapProps & {
                                   fontWeight: 600,
                                   transition: 'all 0.12s ease'
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)' }}
-                                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)' }}
                               >
-                                Rejeitar
+                                Reject
                               </button>
                             )}
                           </>
@@ -504,12 +502,11 @@ const CodeMapInner: React.FC<CodeMapProps & {
                         {onNavigateToIssue && (
                           <button
                             onClick={(e) => { e.stopPropagation(); onNavigateToIssue(i.id) }}
-                            style={{ marginLeft: 'auto', background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, padding: '2px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, transition: 'all 0.12s ease' }}
-                            onMouseEnter={e => { e.currentTarget.style.borderColor = C.blue; e.currentTarget.style.color = C.blue }}
-                            onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.muted }}
+                            className="btn btn-ghost"
+                            style={{ marginLeft: 'auto', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, height: 'auto' }}
                           >
-                            <ExternalLink size={9} color={C.muted} />
-                            <span style={{ fontSize: 9, color: C.muted }}>View</span>
+                            <ExternalLink size={9} />
+                            View
                           </button>
                         )}
                       </div>
@@ -523,34 +520,34 @@ const CodeMapInner: React.FC<CodeMapProps & {
       ) : (
         /* Architectural Risk Dashboard Sidebar (overview initial state) */
         <div style={{ position: 'absolute', top: 16, right: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, width: 300, zIndex: 100, boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100% - 32px)', overflowY: 'auto' }}>
-          <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>Architectural Overview</p>
+          <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>Architecture Overview</p>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-            <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+            <div style={{ background: 'var(--surface-strong)', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
               <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{nodes.length}</span>
-              <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>Ficheiros</p>
+              <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>Files</p>
             </div>
-            <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+            <div style={{ background: 'var(--surface-strong)', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
               <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{edges.length}</span>
-              <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>Relações</p>
+              <p style={{ fontSize: 9, color: C.muted, margin: 0 }}>Relations</p>
             </div>
           </div>
 
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Issues Ativos</p>
+              <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Active Issues</p>
               <Activity size={12} color={issues.length > 0 ? C.yellow : C.green} />
             </div>
-            <div style={{ background: '#111', borderRadius: 6, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ background: 'var(--surface-strong)', borderRadius: 6, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 16, fontWeight: 700, color: issues.length > 0 ? C.yellow : C.green }}>{issues.length}</span>
-              <span style={{ fontSize: 10, color: C.muted }}>anomalias ativas</span>
+              <span style={{ fontSize: 10, color: C.muted }}>active issues</span>
             </div>
           </div>
 
           {hotspots.length > 0 && (
             <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Hotspots de Risco</p>
+                <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Risk Hotspots</p>
                 <TrendingUp size={12} color={C.red} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -559,21 +556,21 @@ const CodeMapInner: React.FC<CodeMapProps & {
                   return (
                     <div key={h.id} 
                       onClick={() => selectFileNode(h.id)}
-                      style={{ background: '#111', border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.12s ease' }}
+                      style={{ background: 'var(--surface-strong)', border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.12s ease' }}
                       onMouseEnter={e => {
-                        e.currentTarget.style.borderColor = C.blue
-                        e.currentTarget.style.background = '#141414'
+                        e.currentTarget.style.borderColor = 'var(--primary)'
+                        e.currentTarget.style.background = 'var(--canvas-soft)'
                       }}
                       onMouseLeave={e => {
-                        e.currentTarget.style.borderColor = C.border
-                        e.currentTarget.style.background = '#111'
+                        e.currentTarget.style.borderColor = 'var(--hairline)'
+                        e.currentTarget.style.background = 'var(--surface-strong)'
                       }}
                     >
                       <div style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
                         <p style={{ fontSize: 11, color: C.text, margin: 0, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileName}</p>
                         <p style={{ fontSize: 9, color: C.muted, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{h.label}</p>
                       </div>
-                      <span style={{ fontSize: 10, color: h.high > 0 ? C.red : C.yellow, fontWeight: 700, background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, color: h.high > 0 ? C.red : C.yellow, fontWeight: 700, background: 'var(--hairline-soft)', padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
                         {h.issues.length}
                       </span>
                     </div>
@@ -601,7 +598,9 @@ export const CodeMap: React.FC<CodeMapProps & {
   onAcceptIssue?: (issue: AnalysisIssue) => void
   onRejectIssue?: (issue: AnalysisIssue) => void
 }> = (props) => (
-  <ReactFlowProvider>
-    <CodeMapInner {...props} />
-  </ReactFlowProvider>
+  <div data-theme="dark" style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <ReactFlowProvider>
+      <CodeMapInner {...props} />
+    </ReactFlowProvider>
+  </div>
 )

@@ -11,6 +11,7 @@ import {
   Search,
   X,
 } from 'lucide-react'
+import { Modal, ModalHeader } from '../components/Modal'
 import { createProject } from '../lib/db'
 import {
   cloneGitHubRepo,
@@ -39,26 +40,25 @@ interface BranchModalState {
 }
 
 export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => void }> = ({ onNavigate }) => {
-  const { profile, installGitHubApp } = useAuth()
+  const { session, profile, connectGitHub } = useAuth()
   const { setFileMap, setProjectId } = useFiles()
   const [repos, setRepos] = useState<GitHubRepo[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [appNotInstalled, setAppNotInstalled] = useState(false)
   const [loadingBranchesFor, setLoadingBranchesFor] = useState<number | null>(null)
   const [cloningRepoId, setCloningRepoId] = useState<number | null>(null)
   const [branchModal, setBranchModal] = useState<BranchModalState | null>(null)
 
-
-
-  const hasGitHubConnection = Boolean(profile?.github_installation_id || profile?.github_token)
+  const hasGitHubConnection = Boolean(
+    session?.user?.identities?.some(id => id.provider === 'github') ||
+    (session?.user?.app_metadata?.providers as string[] | undefined)?.includes('github')
+  )
 
   useEffect(() => {
     if (!hasGitHubConnection) {
       setRepos([])
       setLoading(false)
-      setAppNotInstalled(false)
       return
     }
 
@@ -67,7 +67,6 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
     const loadRepos = async () => {
       setLoading(true)
       setError(null)
-      setAppNotInstalled(false)
 
       const attemptLoad = async () => {
         try {
@@ -77,11 +76,7 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
         } catch (err) {
           if (cancelled) return false
 
-          const msg = err instanceof Error ? err.message : ''
-
-          if (msg.includes('GitHub App not installed') || msg.includes('403')) {
-            setAppNotInstalled(true)
-          } else if (err instanceof RateLimitError) {
+          if (err instanceof RateLimitError) {
             setError(err.message)
           } else {
             setError(err instanceof Error ? err.message : 'Failed to load GitHub repositories.')
@@ -119,7 +114,7 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
 
   const handleConnectGitHub = () => {
     setError(null)
-    installGitHubApp()
+    connectGitHub('/repos')
   }
 
   const handleOpenBranchModal = async (repo: GitHubRepo) => {
@@ -207,16 +202,10 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
 
   return (
     <div style={{ padding: '32px 36px', height: '100%', overflowY: 'auto', background: 'var(--canvas)' }}>
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .spin { animation: spin 1s linear infinite; }
-        @keyframes pulse { 0% { opacity: 0.3 } 50% { opacity: 0.6 } 100% { opacity: 0.3 } }
-        .skeleton { background: var(--surface-strong); border-radius: 8px; animation: pulse 1.5s infinite ease-in-out; }
-      `}</style>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 16 }}>
         <div>
-          <h1 className="page-title" style={{ fontSize: '26px', fontWeight: 400, letterSpacing: '-0.325px', marginBottom: 6 }}>Repositories</h1>
+          <h1 className="page-title" style={{ marginBottom: 6 }}>Repositories</h1>
           <p style={{ fontSize: 14, color: 'var(--ink-muted)' }}>
             Browse your GitHub repositories and clone one directly into Refract for analysis.
           </p>
@@ -232,8 +221,8 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
             padding: '12px 16px',
             borderRadius: '8px',
             marginBottom: 20,
-            background: 'rgba(207, 45, 86, 0.08)',
-            border: '1px solid rgba(207, 45, 86, 0.18)',
+            background: 'color-mix(in srgb, var(--semantic-error) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--semantic-error) 20%, transparent)',
             color: 'var(--semantic-error)',
           }}
         >
@@ -242,7 +231,7 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
         </div>
       )}
 
-      {!hasGitHubConnection || appNotInstalled ? (
+      {!hasGitHubConnection ? (
         <div
           className="card"
           style={{
@@ -259,12 +248,10 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
             </div>
             <div>
               <p style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
-                {appNotInstalled ? 'GitHub App Not Installed' : 'Connect GitHub'}
+                Connect to GitHub
               </p>
               <p style={{ fontSize: 14, color: 'var(--ink-muted)', lineHeight: 1.5 }}>
-                {appNotInstalled
-                  ? 'Install the Refract GitHub App to access your repositories. You only need to do this once.'
-                  : 'Install the Refract GitHub App to list repositories, pick a branch, and clone projects straight into the analysis flow.'}
+                Connect your GitHub account to list public and private repositories, pick a branch, and clone projects straight into the analysis flow.
               </p>
             </div>
           </div>
@@ -275,7 +262,7 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
             style={{ alignSelf: 'flex-start', gap: 8 }}
           >
             <Github size={16} />
-            {appNotInstalled ? 'Install GitHub App' : 'Install GitHub App'}
+            Connect to GitHub
           </button>
         </div>
       ) : (
@@ -392,54 +379,28 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
         </>
       )}
 
-      {branchModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            backdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1200,
-            padding: 24,
-          }}
-          onClick={() => (cloningRepoId ? null : setBranchModal(null))}
-        >
-          <div
-            className="card"
-            style={{ width: '100%', maxWidth: 460, padding: 28, position: 'relative' }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={() => (cloningRepoId ? null : setBranchModal(null))}
-              className="btn btn-ghost btn-sm"
-              style={{ position: 'absolute', right: 18, top: 18, width: 32, height: 32, padding: 0 }}
-            >
-              <X size={14} />
-            </button>
+      <Modal
+        open={!!branchModal}
+        onClose={() => !cloningRepoId && setBranchModal(null)}
+        locked={!!cloningRepoId}
+        maxWidth={460}
+        className="p-7"
+      >
+        {branchModal && (
+          <>
+            <ModalHeader
+              title="Clone & Analyse"
+              subtitle={<>Choose the branch to load from <strong>{branchModal.repo.full_name}</strong>.</>}
+              onClose={cloningRepoId ? undefined : () => setBranchModal(null)}
+            />
 
-            <div style={{ marginBottom: 24 }}>
-              <p style={{ fontSize: 22, fontWeight: 400, color: 'var(--ink)', marginBottom: 8, letterSpacing: '-0.11px' }}>
-                Clone & Analyse
-              </p>
-              <p style={{ fontSize: 14, color: 'var(--ink-muted)', lineHeight: 1.5 }}>
-                Choose the branch you want to load from <strong>{branchModal.repo.full_name}</strong>.
-              </p>
-            </div>
-
-            <label style={{ display: 'block', fontSize: 14, color: 'var(--ink)', marginBottom: 8 }}>
-              Branch
-            </label>
-            <div style={{ position: 'relative', marginBottom: 24 }}>
-              <GitBranch size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-muted)' }} />
+            <label className="block text-sm text-[var(--ink)] mb-2">Branch</label>
+            <div className="relative mb-6">
+              <GitBranch size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-muted)] pointer-events-none" />
               <select
-                className="input"
+                className="input w-full pl-9"
                 value={branchModal.selectedBranch}
                 onChange={(event) => setBranchModal((prev) => prev ? { ...prev, selectedBranch: event.target.value } : prev)}
-                style={{ width: '100%', paddingLeft: 36, appearance: 'none' }}
                 disabled={cloningRepoId === branchModal.repo.id}
               >
                 {branchModal.branches.map((branch) => (
@@ -450,24 +411,24 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
               </select>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <p style={{ fontSize: 14, color: 'var(--ink-muted)' }}>
-                {cloningRepoId === branchModal.repo.id ? 'A clonar repositório...' : 'The repository will be loaded into the in-app analysis flow.'}
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-[var(--ink-muted)]">
+                {cloningRepoId === branchModal.repo.id ? 'Cloning repository…' : 'The repository will be loaded into the in-app analysis flow.'}
               </p>
               <button
                 type="button"
                 onClick={handleCloneAndAnalyse}
-                className="btn btn-primary"
+                className="btn btn-primary flex items-center gap-2"
                 disabled={cloningRepoId === branchModal.repo.id}
-                style={{ gap: 8, minWidth: 152, justifyContent: 'center' }}
+                style={{ minWidth: 152, justifyContent: 'center' }}
               >
                 {cloningRepoId === branchModal.repo.id ? <Loader2 size={16} className="spin" /> : <Download size={16} />}
-                {cloningRepoId === branchModal.repo.id ? 'Cloning...' : 'Clone & Analyse'}
+                {cloningRepoId === branchModal.repo.id ? 'Cloning…' : 'Clone & Analyse'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

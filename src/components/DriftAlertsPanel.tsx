@@ -33,7 +33,7 @@ export const DriftAlertsPanel: React.FC<Props> = ({ report, onDismiss }) => {
   if (report.alerts.length === 0) {
     return (
       <div style={{
-        background: 'rgba(31, 138, 101, 0.08)', border: '1px solid rgba(31, 138, 101, 0.18)',
+        background: 'color-mix(in srgb, var(--semantic-success) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--semantic-success) 20%, transparent)',
         borderRadius: 8, padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'flex-start',
       }}>
         <Info size={13} color="var(--semantic-success)" style={{ flexShrink: 0, marginTop: 1 }} />

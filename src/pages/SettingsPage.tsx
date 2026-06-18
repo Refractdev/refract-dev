@@ -765,7 +765,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
           <span className="section-label font-mono text-[10px] tracking-wider text-[var(--ink-muted-soft)] uppercase mb-1 block">
             {t('settings.title')}
           </span>
-          <h1 className="text-display-sm font-semibold tracking-tight text-[var(--ink)] mb-1">
+          <h1 className="page-title mb-1">
             {t(`settings.tabs.${activeTab}`)}.
           </h1>
         </div>

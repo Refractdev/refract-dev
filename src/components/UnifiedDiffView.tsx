@@ -2,14 +2,14 @@ import React, { useMemo } from 'react'
 import { buildDiffHunks, type DiffHunk } from '../lib/diff'
 
 const C = {
-    bg: 'var(--background)',
+    bg: 'var(--canvas)',
     surface: 'var(--card)',
-    surfaceHover: 'var(--accent)',
-    border: 'var(--border)',
-    text: 'var(--foreground)',
-    muted: 'var(--muted-foreground)',
+    surfaceHover: 'var(--canvas-soft)',
+    border: 'var(--hairline)',
+    text: 'var(--ink)',
+    muted: 'var(--ink-muted)',
     green: 'var(--semantic-success)',
-    red: '#ff5577',
+    red: 'var(--semantic-error)',
 }
 
 const GUTTER_WIDTH = 40
@@ -31,22 +31,22 @@ const DiffLine: React.FC<{
     const isInsert = line.type === 'insert'
 
     const bgColor = isDelete
-        ? 'rgba(255, 91, 79, 0.06)'
+        ? 'color-mix(in srgb, var(--semantic-error) 8%, transparent)'
         : isInsert
-            ? 'rgba(74, 222, 128, 0.06)'
+            ? 'color-mix(in srgb, var(--semantic-success) 8%, transparent)'
             : 'transparent'
 
     const textColor = isDelete
-        ? '#ff8f8a'
+        ? 'var(--semantic-error)'
         : isInsert
-            ? '#a3f3be'
-            : 'var(--foreground)'
+            ? 'var(--semantic-success)'
+            : 'var(--ink)'
 
     const gutterColor = isDelete
-        ? 'rgba(255, 91, 79, 0.4)'
+        ? 'color-mix(in srgb, var(--semantic-error) 50%, transparent)'
         : isInsert
-            ? 'rgba(74, 222, 128, 0.4)'
-            : 'var(--muted-foreground)'
+            ? 'color-mix(in srgb, var(--semantic-success) 50%, transparent)'
+            : 'var(--ink-muted)'
 
     const prefix = isDelete ? '-' : isInsert ? '+' : ' '
     const prefixColor = isDelete ? C.red : isInsert ? C.green : 'transparent'
@@ -60,7 +60,7 @@ const DiffLine: React.FC<{
                 background: bgColor,
                 minHeight: 20,
                 alignItems: 'center',
-                fontFamily: 'Geist Mono, monospace',
+                fontFamily: 'var(--font-mono)',
                 fontSize: 12,
                 lineHeight: 1.6,
             }}
@@ -74,15 +74,15 @@ const DiffLine: React.FC<{
                         right: 0,
                         top: -20,
                         height: 20,
-                        background: 'rgba(59, 130, 246, 0.08)',
-                        borderTop: '1px solid rgba(59, 130, 246, 0.15)',
-                        borderBottom: '1px solid rgba(59, 130, 246, 0.15)',
+                        background: 'color-mix(in srgb, var(--primary) 8%, transparent)',
+                        borderTop: '1px solid color-mix(in srgb, var(--primary) 20%, transparent)',
+                        borderBottom: '1px solid color-mix(in srgb, var(--primary) 20%, transparent)',
                         display: 'flex',
                         alignItems: 'center',
                         padding: '0 12px',
                         fontSize: 10,
-                        color: 'var(--ring)',
-                        fontFamily: 'Geist Mono, monospace',
+                        color: 'var(--primary)',
+                        fontFamily: 'var(--font-mono)',
                         fontWeight: 500,
                     }}
                 >
@@ -205,8 +205,8 @@ export const UnifiedDiffView: React.FC<UnifiedDiffViewProps> = ({
                         <span style={{
                             fontSize: 9,
                             fontWeight: 700,
-                            color: '#10b981',
-                            background: 'rgba(16, 185, 129, 0.12)',
+                            color: 'var(--semantic-success)',
+                            background: 'color-mix(in srgb, var(--semantic-success) 12%, transparent)',
                             padding: '2px 6px',
                             borderRadius: 4,
                             textTransform: 'uppercase',

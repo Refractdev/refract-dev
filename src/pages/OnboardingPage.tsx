@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Code, User, AlertCircle, Sparkles, Layers, ArrowRight, Check } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../lib/supabase'
+import { useToast } from '../components/Toast'
 
 interface OnboardingPageProps {
   onComplete: () => void
@@ -42,6 +43,7 @@ const questions = [
 
 export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) => {
   const { profile, refreshProfile } = useAuth()
+  const { error: toastError } = useToast()
   const [currentStep, setCurrentStep] = useState(0)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -81,7 +83,8 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
       // `AppShell`'s `onComplete` will call `refreshProfile()` so we just notify it here.
       onComplete()
     } catch (err) {
-      console.error('[onboarding] failed to mark as complete:', err)
+      const msg = err instanceof Error ? err.message : 'Failed to save onboarding. Please try again.'
+      toastError(msg)
     } finally {
       setLoading(false)
     }
@@ -107,26 +110,14 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onComplete }) =>
           from { transform: translateX(16px); opacity: 0; }
           to { transform: translateX(0); opacity: 1; }
         }
-        @keyframes fadeOut {
-          from { opacity: 1; }
-          to { opacity: 0; }
-        }
-        .step-enter {
-          animation: slideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        .step-exit {
-          animation: fadeOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        @keyframes fadeOut {
+        @keyframes onboardingFadeOut {
           from { opacity: 1; transform: translateY(0) scale(1); }
           to { opacity: 0; transform: translateY(-10px) scale(0.99); }
         }
-        .onboarding-card-enter {
-          animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        .onboarding-card-exit {
-          animation: fadeOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
+        .step-enter { animation: slideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .step-exit { animation: onboardingFadeOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .onboarding-card-enter { animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .onboarding-card-exit { animation: onboardingFadeOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
       `}</style>
 
       {/* Progress Indicator */}

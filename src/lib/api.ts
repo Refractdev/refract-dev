@@ -257,11 +257,7 @@ export function signInWithGitHub() {
 
 /** Get GitHub provider_token from current Supabase session */
 async function getGitHubToken(): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) throw new Error('Not authenticated')
-  const token = session.provider_token
-  if (!token) throw new Error('GitHub not connected - please login with GitHub')
-  return token
+  return getAccessToken()
 }
 
 function githubHeaders(): Promise<Record<string, string>> {

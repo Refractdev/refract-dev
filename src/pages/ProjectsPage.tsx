@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import {
-  Plus, FolderOpen, GitBranch, Play, Trash2, Loader2,
+  Plus, FolderOpen, GitBranch, Play, Trash2,
   TrendingDown, TrendingUp, Minus,
 } from 'lucide-react'
 import { Project } from '../shared/types'
@@ -14,6 +14,7 @@ import { useTranslation } from '../hooks/useTranslation'
 import { getScoreColor, getDelta, C } from '../lib/health'
 import type { HealthSnapshot } from '../lib/health'
 import { useToast } from '../components/Toast'
+import { Modal, ModalHeader, ModalFooter } from '../components/Modal'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -248,52 +249,27 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onOpe
 
   return (
     <div className="p-8 md:p-12 h-full overflow-y-auto bg-[var(--canvas-soft)] select-none box-sizing">
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg) } }
-        .spin { animation: spin 1s linear infinite; }
-        @media (hover: none) { .touch-visible-actions { opacity: 1 !important; } }
-      `}</style>
+      <style>{`@media (hover: none) { .touch-visible-actions { opacity: 1 !important; } }`}</style>
 
       {/* In-app delete confirmation dialog */}
-      {deleteConfirmId && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(0,0,0,0.45)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-          onClick={() => setDeleteConfirmId(null)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--card)', borderRadius: 12, padding: 28,
-              maxWidth: 360, width: '90%',
-              border: '1px solid var(--hairline)',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.24)',
-            }}
+      <Modal open={!!deleteConfirmId} onClose={() => setDeleteConfirmId(null)} maxWidth={380}>
+        <ModalHeader
+          title={t('projects.confirmDelete') || 'Delete project?'}
+          subtitle="This will permanently remove the project and all its analysis history. This action cannot be undone."
+          onClose={() => setDeleteConfirmId(null)}
+        />
+        <ModalFooter>
+          <button className="btn btn-secondary btn-sm" onClick={() => setDeleteConfirmId(null)}>
+            {t('common.cancel')}
+          </button>
+          <button
+            className="btn btn-sm bg-[var(--semantic-error)] text-white border-0"
+            onClick={handleDeleteConfirm}
           >
-            <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
-              Delete project?
-            </h2>
-            <p style={{ fontSize: 13, color: 'var(--ink-muted)', marginBottom: 20 }}>
-              This will permanently remove the project and all its analysis history. This cannot be undone.
-            </p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => setDeleteConfirmId(null)}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-sm"
-                style={{ background: 'var(--semantic-error)', color: '#fff', border: 'none' }}
-                onClick={handleDeleteConfirm}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            {t('common.delete')}
+          </button>
+        </ModalFooter>
+      </Modal>
 
        {error && (
          <div className="p-3.5 bg-[var(--semantic-error)]/10 border border-[var(--semantic-error)]/25 rounded-sm text-xs text-[var(--semantic-error)] leading-relaxed mb-4">
@@ -303,7 +279,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onOpe
        {/* Header */}
        <div className="flex items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-display-sm font-semibold tracking-tight text-[var(--ink)] mb-1">
+            <h1 className="page-title mb-1">
               {t('projects.title')}.
             </h1>
             <p className="text-xs text-[var(--ink-muted)] font-sans">
@@ -319,8 +295,25 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onOpe
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2.5 text-xs text-[var(--ink-muted)] mt-24">
-          <Loader2 size={14} className="spin text-[var(--primary)]" /> {t('common.loading')}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: 20,
+        }}>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="card p-5 flex flex-col gap-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="skeleton h-4 rounded" style={{ width: '55%' }} />
+                <div className="skeleton h-5 w-14 rounded-full" />
+              </div>
+              <div className="skeleton h-3 rounded" style={{ width: '35%' }} />
+              <div className="skeleton h-12 rounded" />
+              <div className="flex gap-2 mt-1">
+                <div className="skeleton h-7 w-20 rounded" />
+                <div className="skeleton h-7 w-20 rounded" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : projects.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 mt-24">

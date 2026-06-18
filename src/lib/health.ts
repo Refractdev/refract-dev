@@ -21,9 +21,9 @@ export function getScoreColor(score: number): string {
 }
 
 export function getScoreBg(score: number): string {
-  if (score >= 80) return 'rgba(31, 138, 101, 0.1)'
-  if (score >= 55) return 'rgba(192, 133, 50, 0.1)'
-  return 'rgba(207, 45, 86, 0.1)'
+  if (score >= 80) return 'color-mix(in srgb, var(--semantic-success) 12%, transparent)'
+  if (score >= 55) return 'color-mix(in srgb, var(--semantic-warning) 12%, transparent)'
+  return 'color-mix(in srgb, var(--semantic-error) 12%, transparent)'
 }
 
 export function getDelta(current?: HealthSnapshot, prev?: HealthSnapshot): number | null {

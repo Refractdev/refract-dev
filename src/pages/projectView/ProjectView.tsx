@@ -33,7 +33,7 @@ const C = {
   blueHover: 'var(--ring)',
   blueDim: 'rgba(0,153,255,0.1)',
   green: 'var(--semantic-success)',
-  red: '#ff5577',
+  red: 'var(--semantic-error)',
 }
 
 const CATEGORY_META: Record<IssueCategory, { name: string; icon: string; impact: 'High' | 'Medium' | 'Low' }> = {
@@ -117,25 +117,25 @@ const SideBySideDiff: React.FC<{
       {/* Code columns */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {/* Left Column (Before) */}
-        <div style={{ background: 'rgba(255, 91, 79, 0.02)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'Geist Mono, monospace', fontSize: 12, lineHeight: 1.6, position: 'relative' }}>
+        <div style={{ background: 'color-mix(in srgb, var(--semantic-error) 4%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, position: 'relative' }}>
           {beforeLines.map((line, idx) => (
-            <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'rgba(255, 91, 79, 0.05)', marginBottom: 2 }}>
-              <span style={{ color: 'rgba(255, 91, 79, 0.4)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
+            <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'color-mix(in srgb, var(--semantic-error) 6%, transparent)', marginBottom: 2 }}>
+              <span style={{ color: 'color-mix(in srgb, var(--semantic-error) 50%, transparent)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
                 {issue.lineStart + idx}
               </span>
-              <pre style={{ margin: 0, color: '#ff8f8a', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
+              <pre style={{ margin: 0, color: 'var(--semantic-error)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
             </div>
           ))}
         </div>
 
         {/* Right Column (After) */}
-        <div style={{ background: 'rgba(74, 222, 128, 0.02)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'Geist Mono, monospace', fontSize: 12, lineHeight: 1.6, position: 'relative' }}>
+        <div style={{ background: 'color-mix(in srgb, var(--semantic-success) 4%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, position: 'relative' }}>
           {afterLines.map((line, idx) => (
-            <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'rgba(74, 222, 128, 0.05)', marginBottom: 2 }}>
-              <span style={{ color: 'rgba(74, 222, 128, 0.4)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
+            <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'color-mix(in srgb, var(--semantic-success) 6%, transparent)', marginBottom: 2 }}>
+              <span style={{ color: 'color-mix(in srgb, var(--semantic-success) 50%, transparent)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
                 {idx + 1}
               </span>
-              <pre style={{ margin: 0, color: '#a3f3be', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
+              <pre style={{ margin: 0, color: 'var(--semantic-success)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
             </div>
           ))}
         </div>
@@ -173,7 +173,7 @@ const AnalysingPanel: React.FC<{ files: any[]; scannedFiles: string[]; activeFil
           const active = activeFile === f.path
           return (
             <div key={f.path} style={{ height: 32, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderRadius: 'var(--radius)', background: active ? 'var(--accent)' : done ? 'var(--background)' : 'transparent', boxShadow: active ? '0 0 0 1px var(--ring)' : done ? 'var(--shadow-border)' : 'none', transition: 'all 0.15s ease' }}>
-              <span style={{ fontSize: 11, color: done ? 'var(--foreground)' : 'var(--muted-foreground)', fontFamily: 'Geist Mono, monospace', flex: 1 }}>
+              <span style={{ fontSize: 11, color: done ? 'var(--foreground)' : 'var(--muted-foreground)', fontFamily: 'var(--font-mono)', flex: 1 }}>
                 {f.name}
               </span>
               {active && <span style={{ fontSize: 9, color: C.blue, letterSpacing: '0.8px' }}>SCANNING</span>}
@@ -454,7 +454,7 @@ const RefactorProposalList: React.FC<{
 
         const reduced = safety?.warnings.some((warning) => warning.includes('Reduced to conservative version'))
         const safetyLabel = !safety?.passed ? 'Failed' : reduced ? 'Reduced' : 'Safe'
-        const safetyTone = !safety?.passed ? 'rgba(255, 91, 79, 0.14)' : reduced ? 'rgba(255, 179, 71, 0.14)' : 'rgba(74, 222, 128, 0.12)'
+        const safetyTone = !safety?.passed ? 'color-mix(in srgb, var(--semantic-error) 15%, transparent)' : reduced ? 'color-mix(in srgb, var(--semantic-warning) 15%, transparent)' : 'color-mix(in srgb, var(--semantic-success) 12%, transparent)'
 
         return (
           <div key={proposal.id} className="card" style={{ padding: 18 }}>
@@ -500,7 +500,7 @@ const RefactorProposalList: React.FC<{
                   borderRadius: 10,
                   fontSize: 12,
                   color: 'var(--ring)',
-                  fontFamily: 'Geist Mono, monospace'
+                  fontFamily: 'var(--font-mono)'
                 }}>
                   <GitBranch size={14} />
                   <span>Rename/Move: {proposal.filePath} → {proposal.movedTo}</span>
@@ -622,7 +622,7 @@ const RefactorProposalList: React.FC<{
                   return (
                     <div key={type} style={{ marginTop: 8 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Logs de {type}</span>
+                        <span style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{type} Logs</span>
                         <button
                           onClick={() => toggleLog(proposal.id, type, '')}
                           style={{ background: 'none', border: 'none', color: C.muted, fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}
@@ -633,11 +633,11 @@ const RefactorProposalList: React.FC<{
                       <pre style={{
                         margin: 0,
                         padding: '10px 12px',
-                        background: '#0d0d0f',
-                        color: '#ff5577',
-                        border: '1px solid rgba(255, 91, 79, 0.2)',
+                        background: 'var(--surface-strong)',
+                        color: 'var(--semantic-error)',
+                        border: '1px solid color-mix(in srgb, var(--semantic-error) 20%, transparent)',
                         borderRadius: 4,
-                        fontFamily: 'Geist Mono, monospace',
+                        fontFamily: 'var(--font-mono)',
                         fontSize: 11,
                         whiteSpace: 'pre-wrap',
                         maxHeight: 180,
@@ -1382,7 +1382,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       }
 
       if (type === 'error') {
-        console.error('Analysis failed', e.data.error)
+        const msg = e.data.error ?? 'Analysis failed. Please try again.'
+        setRequestError(typeof msg === 'string' ? msg : 'Analysis failed. Please try again.')
         setPhase('idle')
       }
     }
@@ -1537,7 +1538,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
               style={{ height: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px', borderRadius: 4, background: 'transparent', cursor: 'pointer', transition: 'background 0.12s ease' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                 {f.isDirectory ? <Folder size={11} color={C.muted} /> : <FileIcon size={11} color={C.muted} />}
-                <span style={{ fontSize: 11, color: f.isDirectory ? '#ddd' : C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 11, color: f.isDirectory ? 'var(--ink)' : C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {f.name}
                 </span>
               </div>
@@ -1557,9 +1558,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
             margin: phase === 'idle' || phase === 'briefing' ? '20px 24px 0' : '0 0 16px',
             padding: '12px 14px',
             borderRadius: 10,
-            background: 'rgba(255, 91, 79, 0.08)',
-            border: '1px solid rgba(255, 91, 79, 0.18)',
-            color: '#ff7f76',
+            background: 'color-mix(in srgb, var(--semantic-error) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--semantic-error) 20%, transparent)',
+            color: 'var(--semantic-error)',
             fontSize: 12,
             lineHeight: 1.6,
           }}
@@ -1578,11 +1579,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       {phase === 'idle' && viewingFile && (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
           <div style={{ padding: '16px 24px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: C.text }}>{viewingFile}</span>
+            <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: C.text }}>{viewingFile}</span>
             <button onClick={() => setViewingFile(null)} className="btn btn-ghost btn-sm">Close File</button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '24px', background: 'var(--card)' }}>
-            <pre style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: C.muted, margin: 0, whiteSpace: 'pre-wrap' }}>
+            <pre style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: C.muted, margin: 0, whiteSpace: 'pre-wrap' }}>
               {fileMap.get(viewingFile)}
             </pre>
           </div>
@@ -1618,7 +1619,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 16, minHeight: 0, height: '100%' }}>
           <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
-              <p style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: C.muted, marginBottom: 6 }}>{currentIssue.filePath}</p>
+              <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: C.muted, marginBottom: 6 }}>{currentIssue.filePath}</p>
               <h2 style={{ fontSize: 15, fontWeight: 500, margin: 0, color: 'var(--foreground)', letterSpacing: '-0.02em', lineHeight: 1.4 }}>
                 {currentIssue.problem}
               </h2>
@@ -1711,10 +1712,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           {currentHistory && (
             <div style={{ marginTop: 16, background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px' }}>
               <p style={{ fontSize: 11, color: 'var(--foreground)', fontWeight: 500, marginBottom: 2 }}>
-                {currentHistory.decision === 'rejected' ? `⚠ ${lang === 'pt' ? 'Rejeitaste isto antes' : 'You rejected this before'}` : `✓ ${lang === 'pt' ? 'Já aceitaste isto antes' : 'You already accepted this before'}`}
+                {currentHistory.decision === 'rejected' ? t('projectView.alreadyRejected') : t('projectView.alreadyAccepted')}
               </p>
               <p style={{ fontSize: 10, color: C.muted }}>
-                {new Date(currentHistory.created_at).toLocaleDateString('pt-PT')}
+                {new Date(currentHistory.created_at).toLocaleDateString(lang === 'pt' ? 'pt-PT' : lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : lang === 'de' ? 'de-DE' : 'en-US')}
               </p>
             </div>
           )}
@@ -1774,7 +1775,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: C.bg, gap: 20, padding: 24 }}>
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } } .spin { animation: spin 1s linear infinite; }`}</style>
         <ZapOff size={48} color={C.muted} style={{ marginBottom: 8 }} />
         <h2 style={{ fontSize: 20, color: 'var(--foreground)', fontWeight: 500, textAlign: 'center', margin: 0 }}>
           {lang === 'pt' ? 'Ficheiros do repositório não carregados' : 'Repository files not loaded'}
@@ -1787,10 +1787,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
         {recloneError && (
           <div style={{
-            background: 'rgba(255, 91, 79, 0.08)',
-            border: '1px solid rgba(255, 91, 79, 0.18)',
+            background: 'color-mix(in srgb, var(--semantic-error) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--semantic-error) 20%, transparent)',
             borderRadius: '8px',
-            color: '#ff7f76',
+            color: 'var(--semantic-error)',
             fontSize: 13,
             lineHeight: 1.5,
             padding: '10px 14px',
