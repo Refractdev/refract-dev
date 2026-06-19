@@ -28,32 +28,17 @@ async function githubRequest(
   return response.json()
 }
 
-async function getGitHubToken(authHeader: string | undefined): Promise<string> {
-  if (!authHeader?.startsWith('Bearer ')) {
-    throw new Error('Missing authorization header')
-  }
+async function getGitHubToken(userId: string): Promise<string> {
   const supabase = getAdminSupabaseClient()
-  const accessToken = authHeader.replace('Bearer ', '')
-  const { data: { user }, error } = await supabase.auth.getUser(accessToken)
-  if (error || !user) throw new Error('Invalid session')
+  const { data: profile } = await supabase
+    .from('users')
+    .select('github_token')
+    .eq('id', userId)
+    .maybeSingle()
 
-  const { data: sessionData, error: sessionError } = await supabase.auth.admin.getUserById(user.id)
-  if (sessionError || !sessionData?.user) throw new Error('Failed to get user session')
-
-  // Get the provider_token from the user's identities
-  const identities = sessionData.user.identities ?? []
-  const githubIdentity = identities.find((id: any) => id.provider === 'github')
-  const providerToken = (githubIdentity as any)?.identity_data?.provider_token ?? null
-
-  if (!providerToken) {
-    // Try getting from session
-    const { data: { session } } = await supabase.auth.getSession()
-    const token = session?.provider_token
-    if (!token) throw new Error('GitHub not connected - please login with GitHub')
-    return token
-  }
-
-  return providerToken
+  const token = (profile as any)?.github_token as string | null
+  if (!token) throw new Error('GitHub not connected - please reconnect your GitHub account')
+  return token
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -242,7 +227,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    const token = await getGitHubToken(req.headers.authorization)
+    const token = await getGitHubToken(user.id)
 
     switch (action) {
       case 'repos': {
