@@ -112,9 +112,10 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
     })
   }, [repos, search])
 
-  const handleConnectGitHub = () => {
+  const handleConnectGitHub = async () => {
     setError(null)
-    connectGitHub('/repos')
+    const { error: connectError } = await connectGitHub('/repos')
+    if (connectError) setError(connectError.message)
   }
 
   const handleOpenBranchModal = async (repo: GitHubRepo) => {

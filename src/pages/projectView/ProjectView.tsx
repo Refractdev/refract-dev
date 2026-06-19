@@ -15,6 +15,7 @@ import { useFiles } from '../../context/FilesContext'
 import { trackEvent } from '../../lib/analytics'
 import type { TransformProposal, SafetyResult } from '../../engine/types'
 import { generateReport } from '../../lib/report'
+import { applyAcceptedPatches } from '../../lib/applyIssuePatch'
 import { CodeMap } from './CodeMap'
 import { useTranslation } from '../../hooks/useTranslation'
 import { UnifiedDiffView } from '../../components/UnifiedDiffView'
@@ -96,7 +97,17 @@ const SideBySideDiff: React.FC<{
 }> = ({ issue, loading }) => {
   const { t } = useTranslation()
   const beforeLines = issue.lines.before || []
-  const afterLines = issue.lines.after || []
+  // Prefer explicit after-lines; fall back to the precomputed patch when the
+  // detector only populated `patch.after` (keeps the right column from rendering blank).
+  const patchAfter = issue.patch?.after
+  const afterLines = (issue.lines.after && issue.lines.after.length > 0)
+    ? issue.lines.after
+    : (patchAfter ? patchAfter.split('\n') : [])
+
+  const isDeletion =
+    afterLines.length === 0 && (beforeLines.length > 0 || patchAfter === '')
+  // Advisory: no applicable fix at all (no after content and not a deletion).
+  const isAdvisory = afterLines.length === 0 && !isDeletion
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', minHeight: 0 }}>
@@ -129,15 +140,30 @@ const SideBySideDiff: React.FC<{
         </div>
 
         {/* Right Column (After) */}
-        <div style={{ background: 'color-mix(in srgb, var(--semantic-success) 4%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, position: 'relative' }}>
-          {afterLines.map((line, idx) => (
-            <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'color-mix(in srgb, var(--semantic-success) 6%, transparent)', marginBottom: 2 }}>
-              <span style={{ color: 'color-mix(in srgb, var(--semantic-success) 50%, transparent)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
-                {idx + 1}
-              </span>
-              <pre style={{ margin: 0, color: 'var(--semantic-success)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
-            </div>
-          ))}
+        <div style={{ background: 'color-mix(in srgb, var(--semantic-success) 4%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, position: 'relative', display: (loading || isDeletion || isAdvisory) ? 'flex' : 'block', alignItems: 'center', justifyContent: 'center' }}>
+          {loading ? (
+            <span style={{ color: C.muted, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <Loader2 size={14} className="animate-spin" />
+              {t('projectView.refactored')}…
+            </span>
+          ) : isDeletion ? (
+            <span style={{ color: C.muted, fontSize: 12, fontStyle: 'italic', textAlign: 'center' }}>
+              {t('projectView.diffLineRemoved')}
+            </span>
+          ) : isAdvisory ? (
+            <span style={{ color: C.muted, fontSize: 12, fontStyle: 'italic', textAlign: 'center', padding: '0 8px' }}>
+              {t('projectView.diffNoAutoFix')}
+            </span>
+          ) : (
+            afterLines.map((line, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'color-mix(in srgb, var(--semantic-success) 6%, transparent)', marginBottom: 2 }}>
+                <span style={{ color: 'color-mix(in srgb, var(--semantic-success) 50%, transparent)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
+                  {idx + 1}
+                </span>
+                <pre style={{ margin: 0, color: 'var(--semantic-success)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -742,6 +768,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [fileExplanation, setFileExplanation] = useState<string | null>(null)
   const [loadingFileExplanation, setLoadingFileExplanation] = useState(false)
   const [explanationCache, setExplanationCache] = useState<Record<string, string>>({})
+  // Tracks the issue id whose explanation request is currently in flight, so we
+  // don't fire duplicate Groq calls (e.g. StrictMode double-invoke or rapid nav).
+  const explainInFlightRef = useRef<string | null>(null)
   const [decisionHistory, setDecisionHistory] = useState<Record<string, { decision: string; created_at: string }>>({})
   const [currentSig, setCurrentSig] = useState<string | null>(null)
   const [loadingRefactor, setLoadingRefactor] = useState(false)
@@ -801,12 +830,18 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       return;
     }
 
+    const issueId = currentIssue.id;
+    const issueProblem = currentIssue.problem;
+
+    // Guard against duplicate in-flight requests for the same issue
+    // (React StrictMode double-invokes effects in development).
+    if (explainInFlightRef.current === issueId) return;
+    explainInFlightRef.current = issueId;
+
     setIssueExplanation(null);
     setLoadingExplanation(true);
 
-    const issueId = currentIssue.id;
-    const issuePath = currentIssue.filePath;
-    const issueProblem = currentIssue.problem;
+    const controller = new AbortController();
 
     async function getExplanation() {
       try {
@@ -814,22 +849,32 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         // Read file from uploaded files
         const fileContent = getFileContentForIssue(currentIssue.filePath, fileMap);
         const fileSource = fileContent ? fileContent.content : '';
-        const explanation = await explainIssue(currentIssue, fileSource, combinedGuidelines);
+        const explanation = await explainIssue(currentIssue, fileSource, combinedGuidelines, controller.signal);
+        if (controller.signal.aborted) return;
         setRequestError(null)
         setIssueExplanation(explanation);
         setExplanationCache(prev => ({ ...prev, [issueId]: explanation }));
       } catch (err) {
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
         console.error('Failed to explain issue:', err)
         if (err instanceof RateLimitError) {
           setRequestError(err.message)
         }
         setIssueExplanation(issueProblem);
       } finally {
-        setLoadingRefactor(false)
-        setLoadingExplanation(false);
+        if (explainInFlightRef.current === issueId) explainInFlightRef.current = null;
+        if (!controller.signal.aborted) {
+          setLoadingRefactor(false)
+          setLoadingExplanation(false);
+        }
       }
     }
     getExplanation();
+
+    return () => {
+      controller.abort();
+      if (explainInFlightRef.current === issueId) explainInFlightRef.current = null;
+    };
   }, [currentIssue?.id, combinedGuidelines])
 
   // Transition to 'complete' when all refactoring proposals are applied/skipped
@@ -1092,11 +1137,16 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     }
     setDecisions(all)
 
-    // 2) Feedback imediato ao utilizador
+    // 2) Aplicar os patches estáticos dos detetores (AST) ao fileMap.
+    // setFileMap é assíncrono, por isso passamos o mapa já corrigido ao motor.
+    const patched = applyAcceptedPatches(fileMap, allIssues, all)
+    setFileMap(patched)
+
+    // 3) Feedback imediato ao utilizador
     setPhase('applying')
     setLoadingRefactor(true)
 
-    // 3) Persistência em background (não bloqueia UI)
+    // 4) Persistência em background (não bloqueia UI)
     void Promise.allSettled(
       allIssues.map(async (i) => {
         try {
@@ -1108,22 +1158,59 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       })
     )
 
-    // 4) Iniciar engine imediatamente
-    runRefactorEngine(true)
+    // 5) Iniciar engine sobre o mapa já corrigido
+    runRefactorEngine(true, patched)
   }
 
-  const runRefactorEngine = async (autoApplyAll = false) => {
+  // Re-run the AST analysis on an already-patched file map so the monitor,
+  // health score and remaining issue count reflect the fixes just applied.
+  // Unlike runAnalysis, this does NOT reset decisions or re-enter review.
+  const recomputeAfterApply = async (map: Map<string, string>) => {
+    const worker = workerRef.current
+    if (!worker) {
+      setLoadingRefactor(false)
+      setPhase('complete')
+      return
+    }
+
+    const serialized: Record<string, string> = {}
+    for (const [key, value] of map.entries()) {
+      serialized[key] = value
+    }
+
+    worker.onmessage = async (e: MessageEvent) => {
+      const { type } = e.data
+      if (type === 'progress') return
+      if (type === 'success') {
+        const analysisResult: AnalysisResult = e.data.result
+        setResult(analysisResult)
+        await persistProjectAnalysis(analysisResult.summary)
+      } else if (type === 'error') {
+        console.error('[recompute] analysis failed', e.data.error)
+      }
+      setLoadingRefactor(false)
+      setPhase('complete')
+    }
+
+    worker.postMessage({ files: serialized })
+  }
+
+  const runRefactorEngine = async (autoApplyAll = false, baseMap: Map<string, string> = fileMap) => {
     if (!refactorWorkerRef.current) {
       setLoadingRefactor(false)
       setLoadingRefactorEngine(false)
-      setPhase('complete')
+      if (autoApplyAll) {
+        void recomputeAfterApply(baseMap)
+      } else {
+        setPhase('complete')
+      }
       return
     }
     setLoadingRefactorEngine(true)
     setRequestError(null)
 
     const serialized: Record<string, string> = {}
-    for (const [key, value] of fileMap.entries()) {
+    for (const [key, value] of baseMap.entries()) {
       serialized[key] = value
     }
 
@@ -1142,9 +1229,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           const safeProposals = proposals.filter((p) => SAFE_FOR_BULK.includes(p.type))
           const reviewProposals = proposals.filter((p) => !SAFE_FOR_BULK.includes(p.type))
 
+          // Start from the patched base map (detector fixes already applied).
+          let finalMap = baseMap
           if (safeProposals.length > 0) {
-            const nextMap = batchApply(fileMap, safeProposals)
-            setFileMap(nextMap)
+            finalMap = batchApply(baseMap, safeProposals)
+            setFileMap(finalMap)
             void trackEvent('refract_applied', {
               project_id: project?.id,
               changes_count: safeProposals.length,
@@ -1162,16 +1251,19 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           }
 
           if (reviewProposals.length > 0) {
-            // Present risky proposals for manual review instead of auto-applying
+            // Present risky proposals for manual review instead of auto-applying.
+            // Health is recomputed once the user finishes reviewing them.
             setRefactorProposals(reviewProposals)
             setPhase('refactoring')
+            setLoadingRefactor(false)
+            setLoadingRefactorEngine(false)
           } else {
             setRefactorProposals([])
-            setPhase('complete')
+            setLoadingRefactorEngine(false)
+            // Re-analyze the patched files so the monitor/health and issue
+            // count reflect the fixes that were just applied.
+            void recomputeAfterApply(finalMap)
           }
-
-          setLoadingRefactor(false)
-          setLoadingRefactorEngine(false)
           return
         }
 
@@ -1187,7 +1279,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         setRequestError(event.data.error ?? 'Failed to analyze refactoring proposals.')
         setLoadingRefactorEngine(false)
         setLoadingRefactor(false)
-        setPhase('complete')
+        // Detector patches are already in baseMap — still recompute health.
+        if (autoApplyAll) {
+          void recomputeAfterApply(baseMap)
+        } else {
+          setPhase('complete')
+        }
       }
     }
 
@@ -1195,9 +1292,13 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
     timeout = setTimeout(() => {
       console.warn('[refactor] Worker timeout — forcing complete')
-      setPhase('complete')
       setLoadingRefactor(false)
       setLoadingRefactorEngine(false)
+      if (autoApplyAll) {
+        void recomputeAfterApply(baseMap)
+      } else {
+        setPhase('complete')
+      }
     }, 30_000)
   }
 
@@ -1231,10 +1332,29 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setRequestError(null)
 
     try {
+      // Apply accepted issue patches to a copy of the fileMap, then send only
+      // the files that actually changed (vs. the current fileMap). Without this
+      // the PR would contain identical blobs and open with zero file changes.
+      const patchedMap = applyAcceptedPatches(fileMap, allIssues, decisions)
+
       const changes: Array<{ filePath: string; newContent: string }> = []
-      for (const [path, content] of fileMap.entries()) {
-        changes.push({ filePath: path, newContent: content })
+      for (const [path, content] of patchedMap.entries()) {
+        if (content !== fileMap.get(path)) {
+          changes.push({ filePath: path, newContent: content })
+        }
       }
+
+      if (changes.length === 0) {
+        setRequestError(
+          lang === 'pt'
+            ? 'Nenhuma alteração para incluir no PR. Aceita issues com correção automática antes de criar o PR.'
+            : 'No changes to include in the PR. Accept issues with an automatic fix before creating the PR.',
+        )
+        return
+      }
+
+      // Keep local state in sync with what we're sending to GitHub.
+      setFileMap(patchedMap)
 
       const branchName = `refract/${Date.now()}`
       const title = lang === 'pt'

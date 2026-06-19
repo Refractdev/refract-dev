@@ -13,7 +13,7 @@ interface AuthContextValue {
   signOut: () => Promise<void>
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>
-  connectGitHub: (redirectToPath?: string) => void
+  connectGitHub: (redirectToPath?: string) => Promise<{ error: Error | null }>
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ const AuthContext = createContext<AuthContextValue>({
   signOut: async () => { },
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
-  connectGitHub: () => { },
+  connectGitHub: async () => ({ error: null }),
 })
 
 export const useAuth = () => useContext(AuthContext)
@@ -204,15 +204,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [])
 
-  // Conecta GitHub via Supabase OAuth (provider nativo)
-  const connectGitHub = useCallback((redirectToPath = '/repos') => {
-    supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: {
-        scopes: 'repo,user',
-        redirectTo: `${window.location.origin}${redirectToPath}`,
-      },
-    })
+  const persistGitHubToken = useCallback(async (userId: string, providerToken: string | undefined) => {
+    if (!providerToken) return
+    const { error } = await supabase
+      .from('users')
+      .update({ github_token: providerToken })
+      .eq('id', userId)
+    if (error) console.warn('[auth] failed to persist github_token:', error.message)
+  }, [])
+
+  // Link GitHub when already signed in; sign in with GitHub otherwise.
+  const connectGitHub = useCallback(async (redirectToPath = '/repos') => {
+    const options = {
+      scopes: 'repo user',
+      redirectTo: `${window.location.origin}${redirectToPath}`,
+    }
+
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession()
+
+      if (currentSession) {
+        const { data, error } = await supabase.auth.linkIdentity({
+          provider: 'github',
+          options,
+        })
+        if (error) return { error }
+        if (data?.url) window.location.assign(data.url)
+        return { error: null }
+      }
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options,
+      })
+      return { error: error ?? null }
+    } catch (err) {
+      return { error: err instanceof Error ? err : new Error('Failed to connect GitHub') }
+    }
   }, [])
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────
@@ -264,13 +292,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: s.user.email ?? undefined,
         })
 
-        // Persist the GitHub OAuth provider_token so the server can use it.
-        // provider_token is only present immediately after OAuth sign-in/sign-up.
-        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && s.provider_token) {
-          void supabase
-            .from('users')
-            .update({ github_token: s.provider_token })
-            .eq('id', s.user.id)
+        // provider_token is only present immediately after OAuth sign-in/link.
+        if (
+          (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') &&
+          s.provider_token
+        ) {
+          void persistGitHubToken(s.user.id, s.provider_token)
         }
 
         loadProfileAsync(s)
@@ -296,7 +323,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       subscription.unsubscribe()
       clearTimeout(fallback)
     }
-  }, [ensureProfileForSession, syncAnalyticsIdentity])
+  }, [ensureProfileForSession, persistGitHubToken, syncAnalyticsIdentity])
 
   return (
     <AuthContext.Provider value={{ session, profile, loading, refreshProfile, signOut, signIn, signUp, connectGitHub }}>

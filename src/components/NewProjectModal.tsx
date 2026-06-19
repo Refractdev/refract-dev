@@ -156,9 +156,17 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
           <button
             type="button"
             className="card flex flex-col items-center justify-center p-6 text-center cursor-pointer border border-[var(--hairline)] gap-3 hover:border-[var(--ink)] hover:-translate-y-0.5 transition-all duration-200"
-            onClick={() => {
-              if (hasGitHubConnection) onNavigate?.('repos');
-              else connectGitHub('/repos');
+            onClick={async () => {
+              if (hasGitHubConnection) {
+                onNavigate?.('repos');
+                onClose();
+                return;
+              }
+              const { error: connectError } = await connectGitHub('/repos');
+              if (connectError) {
+                setError(connectError.message);
+                return;
+              }
               onClose();
             }}
           >

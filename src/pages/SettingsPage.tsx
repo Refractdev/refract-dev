@@ -656,8 +656,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
 
               <button
                 className={`btn ${isGitHubConnected ? 'btn-secondary' : 'btn-primary'}`}
-                onClick={() => {
-                  connectGitHub('/settings')
+                onClick={async () => {
+                  const { error: connectError } = await connectGitHub('/settings')
+                  if (connectError) toastError(connectError.message)
                 }}
                 style={{ gap: 8 }}
               >

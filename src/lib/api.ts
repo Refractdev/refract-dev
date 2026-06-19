@@ -87,7 +87,7 @@ async function readResponse<T>(response: Response, fallbackMessage: string): Pro
 
 // ─── AI API Proxy ─────────────────────────────────────────────────────────────
 
-export async function explainIssue(issue: AnalysisIssue, fileSource: string, guidelines?: string): Promise<string> {
+export async function explainIssue(issue: AnalysisIssue, fileSource: string, guidelines?: string, signal?: AbortSignal): Promise<string> {
   const accessToken = await getAccessToken()
 
   const response = await fetch('/api/ai?action=explain', {
@@ -97,6 +97,7 @@ export async function explainIssue(issue: AnalysisIssue, fileSource: string, gui
       'Authorization': `Bearer ${accessToken}`,
     },
     body: JSON.stringify({ issue, fileSource, guidelines }),
+    signal,
   })
 
   const data = await readResponse<{ explanation: string }>(response, 'Failed to explain issue')
@@ -245,14 +246,16 @@ export async function getProjectDependencies(projectPath: string): Promise<{ dep
 // ─── GitHub OAuth via Supabase ────────────────────────────────────────────
 
 /** Sign in with GitHub OAuth through Supabase */
-export function signInWithGitHub() {
-  return supabase.auth.signInWithOAuth({
-    provider: 'github',
-    options: {
-      scopes: 'repo,user',
-      redirectTo: `${window.location.origin}/repos`,
-    },
-  })
+export async function signInWithGitHub() {
+  const options = {
+    scopes: 'repo user',
+    redirectTo: `${window.location.origin}/repos`,
+  }
+  const { data: { session } } = await supabase.auth.getSession()
+  if (session) {
+    return supabase.auth.linkIdentity({ provider: 'github', options })
+  }
+  return supabase.auth.signInWithOAuth({ provider: 'github', options })
 }
 
 /** Get GitHub provider_token from current Supabase session */
