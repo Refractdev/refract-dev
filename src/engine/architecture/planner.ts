@@ -1,6 +1,5 @@
 import { generateArchitecturePlan } from '../../lib/api'
-import { isTsLikeFile } from '../ast'
-import { normalizePath } from '../path'
+import { isTsLikeFile, normalizePath } from '../path'
 import type { ArchitectureBlueprint, ArchitecturePlan, ArchitectureProfile, PlannedMove } from '../types'
 import { parseArchitecturePlan } from './schema'
 import { buildDeterministicPlan } from './placement'

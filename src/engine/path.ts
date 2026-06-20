@@ -88,3 +88,11 @@ export function resolveVirtualImport(
 export function replaceExtension(filePath: string, nextExtension: string): string {
   return `${stripExtension(filePath)}${nextExtension.startsWith('.') ? nextExtension : `.${nextExtension}`}`
 }
+
+export function isTsLikeFile(filePath: string): boolean {
+  return /\.(tsx?|jsx?)$/.test(filePath)
+}
+
+export function isTsxFile(filePath: string): boolean {
+  return /\.(tsx|jsx)$/.test(filePath)
+}

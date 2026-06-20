@@ -1,14 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Layers, ArrowRight, ShieldCheck, AlertTriangle, Sparkles, GitBranch, X } from 'lucide-react'
 import { useTranslation } from '../../hooks/useTranslation'
-import {
-  profileArchitecture,
-  listBlueprints,
-  recommendBlueprint,
-  getBlueprint,
-  planArchitecture,
-  executeArchitecturePlan,
-} from '../../engine/architecture'
+import { profileArchitecture } from '../../engine/architecture/profiler'
+import { listBlueprints, recommendBlueprint, getBlueprint } from '../../engine/architecture/blueprints'
+import { planArchitecture } from '../../engine/architecture/planner'
 import type {
   ArchitecturePlan,
   ArchitectureProfile,
@@ -132,6 +127,7 @@ export const ArchitectureRefactorPanel: React.FC<Props> = ({ fileMap, guidelines
     setError(null)
     setStage('transforming')
     try {
+      const { executeArchitecturePlan } = await import('../../engine/architecture/executor')
       const result = await executeArchitecturePlan(fileMap, plan, getBlueprint(blueprintId), {
         guidelines,
         projectPath,

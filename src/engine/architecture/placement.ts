@@ -1,5 +1,4 @@
-import { isTsLikeFile } from '../ast'
-import { basename, dirname, joinPath, normalizePath } from '../path'
+import { basename, dirname, isTsLikeFile, joinPath, normalizePath } from '../path'
 import type { ArchitectureBlueprint, ArchitecturePlan, PlannedMove } from '../types'
 
 /** Returns the top-level folder/role under src for hint matching. */

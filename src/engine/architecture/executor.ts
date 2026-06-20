@@ -1,6 +1,5 @@
 import { repairFile, rewriteFileToArchitecture } from '../../lib/api'
-import { isTsLikeFile } from '../ast'
-import { normalizePath, resolveVirtualImport, toRelativeImport } from '../path'
+import { isTsLikeFile, normalizePath, resolveVirtualImport, toRelativeImport } from '../path'
 import type {
   ArchitectureBlueprint,
   ArchitectureFileResult,

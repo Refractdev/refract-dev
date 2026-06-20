@@ -1,5 +1,4 @@
-import { dirname, normalizePath } from '../path'
-import { isTsLikeFile } from '../ast'
+import { dirname, isTsLikeFile, normalizePath } from '../path'
 import type { ArchitectureProfile, DetectedFramework, DetectedStructure } from '../types'
 
 const FRAMEWORK_SIGNATURES: Array<{ dep: string; framework: DetectedFramework }> = [
