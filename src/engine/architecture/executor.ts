@@ -8,7 +8,7 @@ import type {
 } from '../types'
 import { validateVirtualMap } from './validate'
 
-const REWRITE_BATCH_SIZE = 4
+const REWRITE_BATCH_SIZE = 1
 const MAX_REPAIR_ROUNDS = 2
 
 export interface ExecuteOptions {

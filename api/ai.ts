@@ -74,6 +74,7 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
 
   try {
     const briefing = await runAIChat({
+      action: 'briefing',
       max_tokens: 256,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -105,6 +106,7 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
 
   try {
     const explanation = await runAIChat({
+      action: 'explain',
       max_tokens: 256,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -137,6 +139,7 @@ Máximo 4 parágrafos. Sê direto — sem introduções genéricas.`
 
   try {
     const explanation = await runAIChat({
+      action: 'explain-code',
       max_tokens: 512,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -170,6 +173,7 @@ Sem markdown. Sem explicações. Sem prefixos extra.`
 
   try {
     const responseText = await runAIChat({
+      action: 'name',
       max_tokens: 32,
       temperature: 0.2,
       messages: [
@@ -204,6 +208,7 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
 
   try {
     const responseText = await runAIChat({
+      action: 'refactor',
       max_tokens: 128,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -277,6 +282,7 @@ Devolve o plano JSON.`
 
   try {
     const responseText = await runAIChat({
+      action: 'arch-plan',
       max_tokens: 4096,
       temperature: 0.1,
       messages: [
@@ -325,6 +331,7 @@ Devolve o código final do ficheiro.`
 
   try {
     const responseText = await runAIChat({
+      action: 'arch-rewrite',
       max_tokens: 4096,
       temperature: 0.1,
       messages: [
@@ -368,6 +375,7 @@ Devolve o código corrigido do ficheiro.`
 
   try {
     const responseText = await runAIChat({
+      action: 'arch-repair',
       max_tokens: 4096,
       temperature: 0.1,
       messages: [
