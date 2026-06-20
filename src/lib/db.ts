@@ -66,6 +66,21 @@ export async function getProject(id: string): Promise<Project | null> {
   return data
 }
 
+export async function getProjectByPath(userId: string, path: string): Promise<Project | null> {
+  const { data, error } = await withTimeout(
+    supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('path', path)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+  )
+  if (error) return null
+  return data
+}
+
 export async function createProject(project: Omit<Project, 'id' | 'created_at'>, userId: string): Promise<Project> {
   const { data, error } = await withTimeout(
     supabase
