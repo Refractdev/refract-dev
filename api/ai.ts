@@ -220,6 +220,174 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
   }
 }
 
+// ─── Architecture refactor handlers ────────────────────────────────────────────
+
+async function handleArchPlan(req: VercelRequest, res: VercelResponse) {
+  const { profile, blueprint, tree, signals } = req.body ?? {}
+
+  if (!blueprint || !tree) {
+    return res.status(400).json({ error: 'Missing required parameters (blueprint, tree)' })
+  }
+
+  const layerList = (blueprint.layers ?? [])
+    .map((l: any) => `- ${l.id}: ${l.description} (pode importar de: ${(l.canImportFrom ?? []).join(', ') || 'nada'})`)
+    .join('\n')
+  const hints = (blueprint.placementHints ?? [])
+    .map((h: any) => `- pasta/papel "${h.match}" -> camada "${h.layer}"`)
+    .join('\n')
+
+  const systemPrompt = `És um arquiteto de software especialista em TypeScript/React.
+Recebes a estrutura atual de um projeto e um blueprint de arquitetura alvo.
+Produzes um PLANO de reestruturação que move cada ficheiro para a camada correta do blueprint, SEM quebrar o código.
+
+Regras:
+- Responde APENAS com JSON válido, sem markdown, sem comentários.
+- Não inventes ficheiros que não existem na árvore.
+- Os caminhos "to" devem começar pela root do blueprint e respeitar as camadas.
+- Marca needsRewrite=true só quando o conteúdo precisa de mudar (ex.: imports internos que mudam de forma não trivial); movimentos simples são needsRewrite=false.
+- Usa "newFiles" para barrels (index.ts) que exponham a API pública de cada camada/módulo.
+- Inclui em "unchanged" ficheiros de config/entrypoints que não devem mover.
+
+Schema de resposta:
+{
+  "blueprintId": "${blueprint.id}",
+  "summary": "string curta",
+  "moves": [{"from":"src/x.ts","to":"src/domain/x.ts","layer":"domain","needsRewrite":false,"reason":"..."}],
+  "newFiles": [{"path":"src/domain/index.ts","kind":"barrel","description":"..."}],
+  "unchanged": ["src/main.tsx"],
+  "warnings": ["..."]
+}`
+
+  const userPrompt = `Blueprint alvo: ${blueprint.name} (${blueprint.id})
+${blueprint.summary}
+
+Camadas:
+${layerList}
+
+Hints de colocação:
+${hints}
+
+Perfil detetado: framework=${profile?.framework ?? 'unknown'}, estrutura=${profile?.structure?.kind ?? 'unknown'}, ficheiros=${profile?.structure?.codeFileCount ?? '?'}
+
+${signals ? `Sinais da análise (problemas detetados):\n${signals}\n` : ''}
+Árvore de ficheiros (caminhos):
+${tree}
+
+Devolve o plano JSON.`
+
+  try {
+    const responseText = await runAIChat({
+      max_tokens: 4096,
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    })
+    return res.status(200).json({ plan: responseText })
+  } catch (err: any) {
+    console.error('Arch plan error:', err)
+    return res.status(500).json({ error: err.message || 'Failed to generate architecture plan' })
+  }
+}
+
+async function handleArchRewrite(req: VercelRequest, res: VercelResponse) {
+  const { filePath, targetPath, source, layer, importRewrites, guidelines } = req.body ?? {}
+
+  if (!filePath || source === undefined) {
+    return res.status(400).json({ error: 'Missing required parameters (filePath, source)' })
+  }
+
+  const systemPrompt = `És um especialista em refactoring TypeScript/React.
+Reescreves UM ficheiro para se adequar à nova arquitetura, preservando exatamente o comportamento.
+
+Regras:
+- Responde APENAS com o código final do ficheiro, sem markdown, sem fences, sem explicações.
+- Mantém a mesma lógica e exports públicos.
+- Atualiza apenas imports internos/relativos para os novos caminhos indicados.
+- Não adiciones dependências novas. Não mudes a API pública.`
+
+  const rewriteList = Array.isArray(importRewrites) && importRewrites.length > 0
+    ? importRewrites.map((r: any) => `- "${r.from}" -> "${r.to}"`).join('\n')
+    : '(sem mudanças de import conhecidas — ajusta só se necessário)'
+
+  const userPrompt = `Ficheiro atual: ${filePath}
+Novo caminho: ${targetPath ?? filePath}
+Camada alvo: ${layer ?? 'n/a'}
+
+Reescritas de import a aplicar:
+${rewriteList}
+${guidelines ? `\nGuidelines:\n${guidelines}\n` : ''}
+Código original:
+${source}
+
+Devolve o código final do ficheiro.`
+
+  try {
+    const responseText = await runAIChat({
+      max_tokens: 4096,
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    })
+    return res.status(200).json({ content: stripCodeFences(responseText) })
+  } catch (err: any) {
+    console.error('Arch rewrite error:', err)
+    return res.status(500).json({ error: err.message || 'Failed to rewrite file' })
+  }
+}
+
+async function handleArchRepair(req: VercelRequest, res: VercelResponse) {
+  const { filePath, source, errors } = req.body ?? {}
+
+  if (!filePath || source === undefined) {
+    return res.status(400).json({ error: 'Missing required parameters (filePath, source)' })
+  }
+
+  const errorList = Array.isArray(errors) ? errors.join('\n') : String(errors ?? '')
+
+  const systemPrompt = `És um especialista em TypeScript.
+Corriges erros de compilação num ficheiro, mudando o MÍNIMO possível e preservando o comportamento.
+
+Regras:
+- Responde APENAS com o código final do ficheiro, sem markdown, sem fences, sem explicações.
+- Corrige só o que causa os erros indicados (tipicamente imports/typings).
+- Não mudes a API pública nem a lógica.`
+
+  const userPrompt = `Ficheiro: ${filePath}
+
+Erros do typecheck:
+${errorList}
+
+Código atual:
+${source}
+
+Devolve o código corrigido do ficheiro.`
+
+  try {
+    const responseText = await runAIChat({
+      max_tokens: 4096,
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    })
+    return res.status(200).json({ content: stripCodeFences(responseText) })
+  } catch (err: any) {
+    console.error('Arch repair error:', err)
+    return res.status(500).json({ error: err.message || 'Failed to repair file' })
+  }
+}
+
+function stripCodeFences(text: string): string {
+  const trimmed = text.trim()
+  const fenced = trimmed.match(/```(?:[a-zA-Z]+)?\s*([\s\S]*?)```/)
+  return (fenced ? fenced[1] : trimmed).trim()
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -259,6 +427,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return handleName(req, res)
     case 'refactor':
       return handleRefactor(req, res)
+    case 'arch-plan':
+      return handleArchPlan(req, res)
+    case 'arch-rewrite':
+      return handleArchRewrite(req, res)
+    case 'arch-repair':
+      return handleArchRepair(req, res)
     default:
       return res.status(400).json({ error: `Unknown action: ${action}` })
   }

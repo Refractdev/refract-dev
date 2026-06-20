@@ -1,6 +1,6 @@
 import type { Issue } from './analyze'
 
-function isCommentOnly(lines: string[]): boolean {
+export function isCommentOnly(lines: string[]): boolean {
   const text = lines.join('\n').trim()
   if (!text) return true
   return text
@@ -29,7 +29,11 @@ export function preComputePatches(issues: Issue[]): Issue[] {
     const beforeLines = issue.lines.before ?? []
 
     // If afterLines is empty but beforeLines is not, it means a deletion occurred
+    // — unless this is an advisory-only issue (suggestion, no deterministic patch)
     if (afterLines.length === 0 && beforeLines.length > 0) {
+      if (issue.suggestion) {
+        return { ...issue, patch: undefined }
+      }
       return {
         ...issue,
         patch: {
@@ -44,7 +48,13 @@ export function preComputePatches(issues: Issue[]): Issue[] {
     }
 
     if (isCommentOnly(afterLines)) {
-      return { ...issue, patch: undefined }
+      const suggestion = issue.suggestion ?? afterLines.join('\n').replace(/^\/\/\s?/gm, '').trim()
+      return {
+        ...issue,
+        patch: undefined,
+        suggestion,
+        lines: { ...issue.lines, after: [] },
+      }
     }
 
     const beforeText = beforeLines.join('\n')

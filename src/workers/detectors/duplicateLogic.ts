@@ -47,15 +47,11 @@ export function detectDuplicateLogic(parsedCache: Map<string, ParsedFile>): Issu
       if (sim >= threshold) {
         const isSameFile = f1.filePath === f2.filePath;
 
-        const suggestText = isSameFile
-          ? `// Lógica duplicada detetada no mesmo ficheiro.\n` +
-            `// As funções \`${f1.name || 'anónima'}\` e \`${f2.name || 'anónima'}\` têm estrutura idêntica.\n` +
-            `// Extrai para uma função partilhada no mesmo ficheiro ou em src/utils/shared.ts\n` +
-            `// function ${f1.name || 'sharedHelper'}(...args) { ... }`
-          : `// Lógica duplicada detetada com ${f2.fileName}.\n` +
-            `// Move para src/utils/shared.ts\n` +
-            `// export function ${f1.name || 'sharedHelper'}() { ... }`;
+        const suggestion = isSameFile
+          ? `Lógica duplicada no mesmo ficheiro.\nAs funções \`${f1.name || 'anónima'}\` e \`${f2.name || 'anónima'}\` têm estrutura idêntica.\nExtrai para uma função partilhada no mesmo ficheiro ou em src/utils/shared.ts.`
+          : `Lógica duplicada detetada com ${f2.fileName}.\nMove para src/utils/shared.ts e exporta uma função partilhada.`;
 
+        const beforeLines = f1.code.split('\n');
         issues.push({
           id: `duplicate-logic-${f1.filePath}-${f1.line}-${isSameFile ? 'same' : f2.fileName}-${f2.line}`,
           file: f1.fileName,
@@ -67,8 +63,8 @@ export function detectDuplicateLogic(parsedCache: Map<string, ParsedFile>): Issu
           impact: 'Medium',
           lineStart: f1.line,
           lineEnd: f1.endLine,
-          lines: { before: f1.code.split('\n'), after: [suggestText] },
-          patch: { before: f1.code, after: suggestText },
+          lines: { before: beforeLines, after: [] },
+          suggestion,
         });
       }
     }

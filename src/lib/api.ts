@@ -338,3 +338,76 @@ export async function validateProposalSafety(input: ValidateProposalInput): Prom
 
   return readResponse<any>(response, 'Safety validation failed')
 }
+
+// ─── Enterprise architecture refactor ──────────────────────────────────────
+
+export interface ArchitecturePlanRequest {
+  profile: unknown
+  blueprint: unknown
+  tree: string
+  signals?: string
+}
+
+/** Calls the planner LLM. Returns the raw plan text (JSON) for client-side parsing. */
+export async function generateArchitecturePlan(input: ArchitecturePlanRequest): Promise<string> {
+  const accessToken = await getAccessToken()
+
+  const response = await fetch('/api/ai?action=arch-plan', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(input),
+  })
+
+  const data = await readResponse<{ plan: string }>(response, 'Failed to generate architecture plan')
+  return data.plan
+}
+
+export interface RewriteFileRequest {
+  filePath: string
+  targetPath: string
+  source: string
+  layer?: string
+  importRewrites?: Array<{ from: string; to: string }>
+  guidelines?: string
+}
+
+export async function rewriteFileToArchitecture(input: RewriteFileRequest): Promise<string> {
+  const accessToken = await getAccessToken()
+
+  const response = await fetch('/api/ai?action=arch-rewrite', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(input),
+  })
+
+  const data = await readResponse<{ content: string }>(response, 'Failed to rewrite file')
+  return data.content
+}
+
+export interface RepairFileRequest {
+  filePath: string
+  source: string
+  errors: string[]
+}
+
+export async function repairFile(input: RepairFileRequest): Promise<string> {
+  const accessToken = await getAccessToken()
+
+  const response = await fetch('/api/ai?action=arch-repair', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(input),
+  })
+
+  const data = await readResponse<{ content: string }>(response, 'Failed to repair file')
+  return data.content
+}

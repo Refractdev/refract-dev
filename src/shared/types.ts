@@ -61,6 +61,7 @@ export interface AnalysisIssue {
     before: string
     after: string
   }
+  suggestion?: string
   effort?: 'low' | 'medium' | 'high'
   blastRadius?: number
   priority?: number

@@ -31,6 +31,8 @@ export interface Issue {
   lineEnd: number;
   lines: { before: string[]; after: string[] };
   patch?: { before: string; after: string };
+  /** Advisory-only issues (no deterministic patch) — human-readable refactor hint */
+  suggestion?: string;
   effort?: 'low' | 'medium' | 'high';
   blastRadius?: number;
   priority?: number;

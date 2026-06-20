@@ -19,6 +19,8 @@ import { CodeMap } from './CodeMap'
 import { useTranslation } from '../../hooks/useTranslation'
 import { UnifiedDiffView } from '../../components/UnifiedDiffView'
 import { ScoreRing } from '../../components/ScoreRing'
+import { getSampleFileMap, isSampleProject } from '../../lib/sampleProject'
+import { ArchitectureRefactorPanel } from './ArchitectureRefactorPanel'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const C = {
@@ -100,6 +102,12 @@ const SideBySideDiff: React.FC<{
   const { t } = useTranslation()
   const beforeLines = issue.lines.before || []
   const afterLines = issue.lines.after || []
+  const afterIsCommentOnly = afterLines.length > 0 && afterLines.join('\n').trim().split('\n').every(l => l.trim().startsWith('//') || l.trim() === '')
+  const hasMeaningfulPatch = !!issue.patch?.after && issue.patch.after.trim() !== '' && !issue.patch.after.trim().split('\n').every(l => l.trim().startsWith('//') || l.trim() === '')
+  const isAdvisory = !hasMeaningfulPatch && (afterLines.length === 0 || afterIsCommentOnly || !!issue.suggestion)
+  const advisoryText = issue.suggestion
+    || (afterIsCommentOnly ? afterLines.join('\n').replace(/^\/\/\s?/gm, '').trim() : '')
+    || t('projectView.noDeterministicFix')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', minHeight: 0 }}>
@@ -111,8 +119,8 @@ const SideBySideDiff: React.FC<{
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ fontSize: 11, textTransform: 'uppercase', color: C.muted, letterSpacing: '0.08em', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.green }} />
-            {t('projectView.refactored')}
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: isAdvisory ? 'var(--semantic-warning)' : C.green }} />
+            {isAdvisory ? t('projectView.suggestionLabel') : t('projectView.refactored')}
           </div>
         </div>
       </div>
@@ -131,17 +139,27 @@ const SideBySideDiff: React.FC<{
           ))}
         </div>
 
-        {/* Right Column (After) */}
-        <div style={{ background: 'color-mix(in srgb, var(--semantic-success) 4%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, position: 'relative' }}>
-          {afterLines.map((line, idx) => (
-            <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'color-mix(in srgb, var(--semantic-success) 6%, transparent)', marginBottom: 2 }}>
-              <span style={{ color: 'color-mix(in srgb, var(--semantic-success) 50%, transparent)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
-                {idx + 1}
-              </span>
-              <pre style={{ margin: 0, color: 'var(--semantic-success)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
-            </div>
-          ))}
-        </div>
+        {/* Right Column (After or Advisory) */}
+        {isAdvisory ? (
+          <div style={{ background: 'color-mix(in srgb, var(--semantic-warning) 6%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px', overflowY: 'auto', fontSize: 13, lineHeight: 1.7, color: 'var(--muted-foreground)' }}>
+            {loading ? (
+              <span style={{ fontStyle: 'italic', color: C.muted }}>{t('projectView.analyzingIssue')}</span>
+            ) : (
+              <div style={{ whiteSpace: 'pre-wrap' }}>{advisoryText}</div>
+            )}
+          </div>
+        ) : (
+          <div style={{ background: 'color-mix(in srgb, var(--semantic-success) 4%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, position: 'relative' }}>
+            {(hasMeaningfulPatch ? issue.patch!.after.split('\n') : afterLines).map((line, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'color-mix(in srgb, var(--semantic-success) 6%, transparent)', marginBottom: 2 }}>
+                <span style={{ color: 'color-mix(in srgb, var(--semantic-success) 50%, transparent)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
+                  {idx + 1}
+                </span>
+                <pre style={{ margin: 0, color: 'var(--semantic-success)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -194,6 +212,7 @@ const AnalysingPanel: React.FC<{ files: any[]; scannedFiles: string[]; activeFil
 
 // ─── Applying panel ───────────────────────────────────────────────────────────
 const ApplyingPanel: React.FC = () => {
+  const { t } = useTranslation()
   const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
@@ -201,23 +220,11 @@ const ApplyingPanel: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  const messages = [
-    'Analysing refactoring opportunities...',
-    'Extracting sub-components...',
-    'Consolidating state...',
-    'Cleaning imports...',
-    'Centralising API calls...',
-    'Running safety checks...',
-    'Almost there...',
-  ]
-
-  const messageIndex = Math.min(Math.floor(elapsed / 4), messages.length - 1)
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16 }}>
       <Loader2 size={28} color={C.muted} className="animate-spin" />
       <p style={{ fontSize: 14, color: C.muted, transition: 'all 0.3s ease' }}>
-        {messages[messageIndex]}
+        {t('projectView.preparingRefactor')}
       </p>
       <p style={{ fontSize: 11, color: C.muted, opacity: 0.5 }}>
         {elapsed}s
@@ -745,7 +752,7 @@ export interface ProjectViewProps { projectId: string | null; onBack: () => void
 export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) => {
   const { t, lang } = useTranslation()
   const [phase, setPhase] = useState<Phase>('idle')
-  const { fileMap, setFileMap, loadFilesForProject } = useFiles()
+  const { fileMap, setFileMap, loadFilesForProject, hydrateProjectFiles } = useFiles()
   const workerRef = useRef<Worker | null>(null)
   const refactorWorkerRef = useRef<Worker | null>(null)
 
@@ -805,9 +812,27 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [activeTab, setActiveTab] = useState<'issues' | 'map'>('issues')
   const [creatingPR, setCreatingPR] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [showArchPanel, setShowArchPanel] = useState(false)
   const autoRunSmokeTestRef = useRef<string | null>(null)
+  const autoCloneAttemptedRef = useRef<string | null>(null)
   const analysisStartRef = useRef<number>(0)
   const [briefingLoading, setBriefingLoading] = useState(false)
+
+  useEffect(() => {
+    setProject(null)
+    setResult(null)
+    setPhase('idle')
+    setBriefingText('')
+    setBriefingLoading(false)
+    setDecisions({})
+    setScannedFiles([])
+    setActiveFile(null)
+    setRequestError(null)
+    setRecloneError(null)
+    setPrUrl(null)
+    autoRunSmokeTestRef.current = null
+    autoCloneAttemptedRef.current = null
+  }, [projectId])
 
   const persistProjectAnalysis = async (analysisResult: AnalysisResult, durationMs?: number) => {
     if (!project?.id || project.id.startsWith('local-')) return
@@ -942,22 +967,25 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     load()
   }, [projectId, loadFilesForProject])
 
+  useEffect(() => {
+    if (!project?.id || !isSampleProject(project)) return
+    if (fileMap.size > 0) return
+    void hydrateProjectFiles(project.id, getSampleFileMap())
+  }, [project, fileMap.size, hydrateProjectFiles])
+
   // Auto-run analysis when files are loaded and no result exists yet.
   // Covers both the smoke-test project and any GitHub-cloned project.
   useEffect(() => {
-    if (!project?.id) return
+    if (!project?.id || !project.path) return
     if (phase !== 'idle') return
     if (result) return
     if (fileMap.size === 0) return
     if (autoRunSmokeTestRef.current === project.id) return
 
-    autoRunSmokeTestRef.current = project.id
     void runAnalysis()
-  }, [project?.id, phase, result, fileMap.size])
+  }, [project?.id, project?.path, phase, result, fileMap.size])
 
   // Auto-clone GitHub repos whose files are not in IndexedDB yet.
-  // Runs once per project when fileMap is empty and a repo URL is available.
-  const autoCloneAttemptedRef = useRef<string | null>(null)
   useEffect(() => {
     if (!project?.id) return
     if (!project.repo) return
@@ -1360,6 +1388,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const runAnalysis = async () => {
     if (!project?.path || !workerRef.current) return
     if (fileMap.size === 0) return
+    autoRunSmokeTestRef.current = project.id
     void trackEvent('analysis_started', {
       project_id: project.id,
       file_count: fileMap.size,
@@ -1526,6 +1555,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           </div>
         )}
 
+        {result && fileMap.size > 0 && (
+          <button onClick={() => setShowArchPanel(true)} className="btn btn-ghost btn-sm" style={{ gap: 6 }}>
+            <Layers size={12} /> {t('projectView.refactorArchitecture')}
+          </button>
+        )}
         <button onClick={runAnalysis} className="btn btn-primary btn-sm">
           <Play size={12} /> {t('projectView.runAnalysisBtn')}
         </button>
@@ -1897,9 +1931,20 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
             </button>
           </div>
         ) : (
-          <button onClick={onBack} className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <ArrowLeft size={14} /> {t('projectView.back')}
-          </button>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {isSampleProject(project) && (
+              <button
+                onClick={() => void hydrateProjectFiles(project.id, getSampleFileMap())}
+                className="btn btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+              >
+                {t('projectView.reloadSample')}
+              </button>
+            )}
+            <button onClick={onBack} className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <ArrowLeft size={14} /> {t('projectView.back')}
+            </button>
+          </div>
         )}
       </div>
     )
@@ -1913,6 +1958,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setCurrentIssueIdx(idx)
     if (phase !== 'reviewing') setPhase('reviewing')
   }
+
+  const architectureSignals = allIssues
+    .slice(0, 20)
+    .map((i) => `- ${i.category} @ ${i.filePath}: ${i.problem}`)
+    .join('\n')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg, overflow: 'hidden' }}>
@@ -1936,6 +1986,22 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           </>
         )}
       </div>
+      {showArchPanel && (
+        <ArchitectureRefactorPanel
+          fileMap={fileMap}
+          guidelines={combinedGuidelines}
+          projectPath={project?.path || undefined}
+          signals={architectureSignals}
+          onApply={(files) => {
+            setFileMap(new Map(Object.entries(files)))
+            setShowArchPanel(false)
+            setResult(null)
+            setPhase('idle')
+            autoRunSmokeTestRef.current = null
+          }}
+          onClose={() => setShowArchPanel(false)}
+        />
+      )}
     </div>
   )
 }
