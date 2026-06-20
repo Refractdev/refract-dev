@@ -1,6 +1,9 @@
-import { createProject } from './db'
+import { createProject, getProjectByPath } from './db'
 import { saveProjectFiles } from './fileStore'
 import type { Project } from '../shared/types'
+
+export const SAMPLE_PROJECT_PATH = '~/code/sample-app'
+export const SAMPLE_PROJECT_NAME = 'sample-app'
 
 /** Minimal fixture with intentional anti-patterns for instant demo value. */
 export const SAMPLE_FILES: Record<string, string> = {
@@ -93,11 +96,25 @@ export function unusedHelper() {
 `,
 }
 
+export function getSampleFileMap(): Map<string, string> {
+  return new Map(Object.entries(SAMPLE_FILES))
+}
+
+export function isSampleProject(project: Pick<Project, 'path' | 'name'> | null | undefined): boolean {
+  if (!project) return false
+  return project.path === SAMPLE_PROJECT_PATH || project.name === SAMPLE_PROJECT_NAME
+}
+
+async function seedSampleFiles(projectId: string): Promise<void> {
+  const fileMap = getSampleFileMap()
+  await saveProjectFiles(projectId, fileMap)
+}
+
 export async function createSampleProject(userId: string): Promise<Project> {
   const project = await createProject(
     {
-      name: 'sample-app',
-      path: '~/code/sample-app',
+      name: SAMPLE_PROJECT_NAME,
+      path: SAMPLE_PROJECT_PATH,
       repo: null,
       branch: 'main',
       status: 'Not analysed',
@@ -105,8 +122,15 @@ export async function createSampleProject(userId: string): Promise<Project> {
     userId,
   )
 
-  const fileMap = new Map(Object.entries(SAMPLE_FILES))
-  await saveProjectFiles(project.id, fileMap)
-
+  await seedSampleFiles(project.id)
   return project
+}
+
+export async function findOrCreateSampleProject(userId: string): Promise<Project> {
+  const existing = await getProjectByPath(userId, SAMPLE_PROJECT_PATH)
+  if (existing) {
+    await seedSampleFiles(existing.id)
+    return existing
+  }
+  return createSampleProject(userId)
 }
