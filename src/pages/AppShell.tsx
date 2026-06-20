@@ -6,10 +6,12 @@ import { SettingsPage } from './SettingsPage';
 import { ProjectView } from './projectView/ProjectView';
 import { ProjectMonitor } from './ProjectMonitor';
 import { Sidebar } from '../components/Sidebar';
+import { Topbar } from '../components/Topbar';
 import { useAuth } from '../lib/AuthContext';
 import { AuthPage } from './AuthPage';
 import { SplashScreen } from '../components/SplashScreen';
 import { OnboardingPage } from './OnboardingPage';
+import { useTranslation } from '../hooks/useTranslation';
 
 class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { hasError: boolean; error: string | null }> {
   constructor(props: any) {
@@ -25,14 +27,12 @@ class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { ha
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: 40, color: 'var(--ink)', background: 'var(--canvas)', minHeight: '100vh' }}>
-          <p style={{ color: 'var(--semantic-error)', fontFamily: 'var(--font-mono)', fontSize: 14 }}>
-            {this.state.error}
-          </p>
+        <div className="flex flex-col items-center justify-center min-h-[50vh] px-6 text-center bg-[var(--canvas-soft)]">
+          <p className="text-[var(--semantic-error)] font-mono text-sm mb-2">Something went wrong</p>
+          <p className="text-[var(--ink-muted)] text-sm mb-6 max-w-md">{this.state.error}</p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
             className="btn btn-primary"
-            style={{ marginTop: 16 }}
           >
             Try again
           </button>
@@ -68,12 +68,12 @@ function parseLocation(): { page: Page; projectId: string | null; monitorId: str
 
 function buildUrl(page: Page, extras: Record<string, string> = {}): string {
   const routeMap: Record<Page, string> = {
-    home:             '/',
-    projects:         '/projects',
-    repos:            '/repos',
-    guidelines:       '/settings',
-    settings:         '/settings',
-    projectView:      '/project-view',
+    home:              '/',
+    projects:          '/projects',
+    repos:             '/repos',
+    guidelines:        '/settings',
+    settings:          '/settings',
+    projectView:       '/project-view',
     'project-monitor': '/project-monitor',
   };
 
@@ -83,8 +83,30 @@ function buildUrl(page: Page, extras: Record<string, string> = {}): string {
   return qs ? `${base}?${qs}` : base;
 }
 
+function getPageTitle(page: Page, t: (key: string) => string): string {
+  switch (page) {
+    case 'home':            return t('sidebar.dashboard');
+    case 'projects':        return t('sidebar.projects');
+    case 'repos':           return t('sidebar.repos');
+    case 'guidelines':
+    case 'settings':        return t('settings.title');
+    case 'projectView':     return t('sidebar.projects');
+    case 'project-monitor': return t('sidebar.projects');
+    default:                return 'Refract';
+  }
+}
+
+function getPageSubtitle(page: Page): string | undefined {
+  switch (page) {
+    case 'projectView':     return 'Analysis';
+    case 'project-monitor': return 'Monitor';
+    default:                return undefined;
+  }
+}
+
 export const AppShell: React.FC = () => {
   const { session, loading, profile, refreshProfile } = useAuth();
+  const { t } = useTranslation();
 
   const init = parseLocation();
   const [activePage, setActivePage] = useState<Page>(init.page);
@@ -92,6 +114,22 @@ export const AppShell: React.FC = () => {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(init.projectId);
   const [monitorProjectId, setMonitorProjectId] = useState<string | null>(init.monitorId);
   const [monitorProjectData, setMonitorProjectData] = useState<any>(null);
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sidebar-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleCollapse = () => {
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem('sidebar-collapsed', String(next)); } catch {}
+      return next;
+    });
+  };
 
   React.useEffect(() => {
     const syncPageFromLocation = () => {
@@ -209,6 +247,9 @@ export const AppShell: React.FC = () => {
   };
 
   const showSidebar = activePage !== 'projectView' && activePage !== 'project-monitor';
+  const showTopbar = showSidebar;
+  const pageTitle = getPageTitle(activePage, t);
+  const pageSubtitle = getPageSubtitle(activePage);
 
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--canvas)' }}>
@@ -218,17 +259,29 @@ export const AppShell: React.FC = () => {
           onNavigate={(p) => handleNavigate(p)}
           activeSettingsTab={activeSettingsTab}
           onSettingsTabChange={handleSettingsTabChange}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={handleToggleCollapse}
         />
       )}
-      {/* On mobile the sidebar becomes a drawer; main content is below the fixed top bar */}
-      <main
-        style={{ flex: 1, overflow: 'hidden', height: '100vh' }}
-        className={showSidebar ? 'md:pt-0 pt-[56px]' : ''}
+
+      {/* Main area: topbar + page content */}
+      <div
+        className={showSidebar ? 'md:pt-0 pt-[48px]' : ''}
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}
       >
-        <ErrorBoundary>
-          {renderPage()}
-        </ErrorBoundary>
-      </main>
+        {showTopbar && (
+          <Topbar
+            pageTitle={pageTitle}
+            pageSubtitle={pageSubtitle}
+            onNavigate={(page, params) => handleNavigate(page as Page, params)}
+          />
+        )}
+        <main style={{ flex: 1, overflow: 'hidden' }}>
+          <ErrorBoundary>
+            {renderPage()}
+          </ErrorBoundary>
+        </main>
+      </div>
     </div>
   );
 };

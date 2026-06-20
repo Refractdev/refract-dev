@@ -341,7 +341,7 @@ export function analyzeDrift(
     alerts.push({
       alert_type: 'decay_hotspot',
       severity: hotspot.severity,
-      message: `Ficheiro "${hotspot.fileName}" em degradação (+${hotspot.growthRate} issues/análise, ${hotspot.latestCount} issues atuais).`,
+      message: `File "${hotspot.fileName}" degrading (+${hotspot.growthRate} issues/scan, ${hotspot.latestCount} current issues).`,
       metadata: {
         filePath: hotspot.filePath,
         growthRate: hotspot.growthRate,

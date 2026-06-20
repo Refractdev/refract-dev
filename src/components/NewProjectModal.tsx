@@ -52,8 +52,8 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
   const [gitBranch, setGitBranch] = useState('');
 
   const hasGitHubConnection = Boolean(
-    session?.user?.identities?.some(id => id.provider === 'github') ||
-    (session?.user?.app_metadata?.providers as string[] | undefined)?.includes('github')
+    profile?.github_token ||
+    session?.provider_token
   );
 
   useEffect(() => {

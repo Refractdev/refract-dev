@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Project, Activity } from '../shared/types'
+import type { Project, Activity, AnalysisIssue } from '../shared/types'
 import { deleteProjectFiles } from './fileStore'
 
 // No hardcoded project
@@ -196,15 +196,29 @@ export async function getHealthSnapshots(projectId: string, userId: string, limi
   return data || []
 }
 
+function computeHealthScore(summary: { high: number; medium: number; low: number }): number {
+  return Math.max(0, Math.min(100, 100 - (summary.high * 10) - (summary.medium * 4) - (summary.low * 1)))
+}
+
+function buildIssueBreakdowns(issues: AnalysisIssue[]) {
+  const categoryCounts: Record<string, number> = {}
+  const fileCounts: Record<string, number> = {}
+  for (const issue of issues) {
+    categoryCounts[issue.category] = (categoryCounts[issue.category] ?? 0) + 1
+    const filePath = issue.filePath || issue.file
+    if (filePath) fileCounts[filePath] = (fileCounts[filePath] ?? 0) + 1
+  }
+  return { categoryCounts, fileCounts }
+}
+
 export async function persistProjectHealth(
   projectId: string,
   summary: { total: number; high: number; medium: number; low: number },
-  status: Project['status'] = 'Refracted'
+  status: Project['status'] = 'Refracted',
+  issues?: AnalysisIssue[],
+  durationMs?: number,
 ): Promise<HealthSnapshot | null> {
-  const score = Math.max(0, Math.min(100,
-    100 - (summary.high * 10) - (summary.medium * 4) - (summary.low * 1)
-  ))
-
+  const score = computeHealthScore(summary)
   const timestamp = new Date().toISOString()
 
   const { data: snapshot, error: snapshotError } = await withTimeout(
@@ -224,6 +238,28 @@ export async function persistProjectHealth(
   )
 
   if (snapshotError) throw snapshotError
+
+  if (issues && issues.length >= 0) {
+    const { categoryCounts, fileCounts } = buildIssueBreakdowns(issues)
+    const { error: analysisError } = await withTimeout(
+      supabase
+        .from('analysis_results')
+        .insert({
+          project_id: projectId,
+          snapshot_id: snapshot?.id ?? null,
+          score,
+          issue_count: summary.total,
+          high: summary.high,
+          medium: summary.medium,
+          low: summary.low,
+          issue_counts_by_category: categoryCounts,
+          file_issue_counts: fileCounts,
+          trigger: 'manual',
+          duration_ms: durationMs ?? null,
+        })
+    )
+    if (analysisError) throw analysisError
+  }
 
   const { error: projectError } = await withTimeout(
     supabase

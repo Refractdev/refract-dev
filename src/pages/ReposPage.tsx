@@ -51,8 +51,8 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
   const [branchModal, setBranchModal] = useState<BranchModalState | null>(null)
 
   const hasGitHubConnection = Boolean(
-    session?.user?.identities?.some(id => id.provider === 'github') ||
-    (session?.user?.app_metadata?.providers as string[] | undefined)?.includes('github')
+    profile?.github_token ||
+    session?.provider_token
   )
 
   useEffect(() => {
@@ -69,20 +69,34 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
       setError(null)
 
       const attemptLoad = async () => {
-        try {
-          const nextRepos = await getGitHubRepos()
-          if (!cancelled) setRepos(nextRepos)
-          return true
-        } catch (err) {
-          if (cancelled) return false
+        const maxAttempts = session?.provider_token && !profile?.github_token ? 4 : 1
 
-          if (err instanceof RateLimitError) {
-            setError(err.message)
-          } else {
-            setError(err instanceof Error ? err.message : 'Failed to load GitHub repositories.')
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          if (attempt > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 400))
           }
-          return false
+
+          try {
+            const nextRepos = await getGitHubRepos()
+            if (!cancelled) setRepos(nextRepos)
+            return true
+          } catch (err) {
+            if (cancelled) return false
+
+            const message = err instanceof Error ? err.message : ''
+            const isNotConnected = message.includes('401') || message.toLowerCase().includes('not connected')
+            if (isNotConnected && attempt < maxAttempts - 1) continue
+
+            if (err instanceof RateLimitError) {
+              setError(err.message)
+            } else {
+              setError(err instanceof Error ? err.message : 'Failed to load GitHub repositories.')
+            }
+            return false
+          }
         }
+
+        return false
       }
 
       try {
@@ -96,7 +110,7 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
     return () => {
       cancelled = true
     }
-  }, [hasGitHubConnection])
+  }, [hasGitHubConnection, profile?.github_token, session?.provider_token])
 
   const filteredRepos = useMemo(() => {
     const needle = search.trim().toLowerCase()

@@ -18,6 +18,7 @@ import '@xyflow/react/dist/style.css'
 import dagre from 'dagre'
 import { FileCode, FileText, Package, AlertTriangle, CheckCircle, AlertCircle, ExternalLink, Activity, Info, TrendingUp } from 'lucide-react'
 import type { AnalysisIssue } from '../../shared/types'
+import { useTranslation } from '../../hooks/useTranslation'
 import type { Decision } from './types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -171,6 +172,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
   onAcceptIssue?: (issue: AnalysisIssue) => void
   onRejectIssue?: (issue: AnalysisIssue) => void
 }> = ({ projectPath, issues, dependencies, onNavigateToIssue, decisions = {}, onAcceptIssue, onRejectIssue }) => {
+  const { t } = useTranslation()
   const { fitView } = useReactFlow()
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -360,7 +362,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
 
   if (isEmpty) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, color: C.muted, fontSize: 12 }}>
-      No dependency graph available.
+      {t('projectView.noGraph')}
     </div>
   )
 

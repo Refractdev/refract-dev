@@ -75,7 +75,7 @@ interface Props {
 }
 
 export const ProjectMonitor: React.FC<Props> = ({ projectId, onBack, onOpenProject, initialProjectData }) => {
-  const { profile } = useAuth()
+  const { profile, session } = useAuth()
   const { t, lang } = useTranslation()
   const [mockMode, setMockMode] = useState(isMockMode())
 
@@ -99,6 +99,8 @@ export const ProjectMonitor: React.FC<Props> = ({ projectId, onBack, onOpenProje
   const [driftReport, setDriftReport] = useState<DriftReport | null>(mockMode ? MOCK_DRIFT_REPORT : null)
   const [commits, setCommits] = useState<GitHubCommit[]>(mockMode ? MOCK_COMMITS : [])
   const [driftLoading, setDriftLoading] = useState(!mockMode)
+  const [driftError, setDriftError] = useState<string | null>(null)
+  const [loadKey, setLoadKey] = useState(0)
   const [copiedSha, setCopiedSha] = useState<string | null>(null)
   const [dismissedAlerts, setDismissedAlerts] = useState<number[]>([])
 
@@ -113,12 +115,15 @@ export const ProjectMonitor: React.FC<Props> = ({ projectId, onBack, onOpenProje
      const load = async () => {
        if (mockMode) return
 
+      let loadedRepo: string | null | undefined = initialProjectData?.repo
+
       if (!initialProjectData) {
         const [proj, snapData] = await Promise.all([
           getProject(projectId),
           getHealthSnapshots(projectId, userId),
         ])
         if (cancelled || !proj) return
+        loadedRepo = proj.repo
         setProject(proj)
         const fromDb = (snapData ?? []) as any[]
         const last = fromDb.length > 0 ? fromDb[0] : null
@@ -134,20 +139,33 @@ export const ProjectMonitor: React.FC<Props> = ({ projectId, onBack, onOpenProje
 
       if (cancelled) return
 
+      const repoUrl = loadedRepo ?? project?.repo
+      const hasGitHubToken = Boolean(profile?.github_token || session?.provider_token)
+
       const [drift, commitData] = await Promise.all([
-        fetchDriftReport(projectId).catch(() => null),
-        fetchProjectCommits(initialProjectData?.repo ?? project?.repo),
+        fetchDriftReport(projectId).catch((err) => {
+          if (!cancelled) {
+            setDriftError(err instanceof Error ? err.message : t('projects.monitor.driftLoadError'))
+          }
+          return null
+        }),
+        hasGitHubToken && repoUrl
+          ? fetchProjectCommits(repoUrl)
+          : Promise.resolve([] as GitHubCommit[]),
       ])
 
       if (cancelled) return
-      if (drift) setDriftReport(drift)
+      if (drift) {
+        setDriftReport(drift)
+        setDriftError(null)
+      }
       setCommits(commitData)
       setDriftLoading(false)
     }
 
     load()
     return () => { cancelled = true }
-  }, [projectId, profile?.id])
+  }, [projectId, profile?.id, profile?.github_token, session?.provider_token, loadKey])
 
   useEffect(() => {
     if (mockMode) return
@@ -231,8 +249,8 @@ export const ProjectMonitor: React.FC<Props> = ({ projectId, onBack, onOpenProje
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
             {project.last_run
-              ? `${lang === 'pt' ? 'Última análise' : lang === 'es' ? 'Último análisis' : lang === 'fr' ? 'Dernière analyse' : lang === 'de' ? 'Letzte Analyse' : 'Last analysis'}: ${formatDate(project.last_run, lang)}`
-              : (lang === 'pt' ? 'Nunca analisado' : lang === 'es' ? 'Nunca analizado' : lang === 'fr' ? 'Jamais analysé' : lang === 'de' ? 'Nie analysiert' : 'Never analysed')}
+              ? `${t('projects.monitor.lastAnalysisTitle')}: ${formatDate(project.last_run, lang)}`
+              : t('projects.neverAnalysed')}
           </span>
           <button
             onClick={() => onOpenProject(project.id)}
@@ -250,6 +268,19 @@ export const ProjectMonitor: React.FC<Props> = ({ projectId, onBack, onOpenProje
 
       {/* ─── Scrollable Body ────────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 'clamp(16px, 4vw, 32px) clamp(16px, 4vw, 32px)' }}>
+
+        {driftError && (
+          <div className="mb-4 p-3.5 bg-[var(--semantic-error)]/10 border border-[var(--semantic-error)]/25 rounded-sm flex items-center justify-between gap-3">
+            <p className="text-xs text-[var(--semantic-error)] leading-relaxed">{driftError}</p>
+            <button
+              type="button"
+              onClick={() => { setDriftError(null); setDriftLoading(true); setLoadKey((k) => k + 1) }}
+              className="btn btn-secondary text-xs shrink-0"
+            >
+              {t('projects.monitor.retry')}
+            </button>
+          </div>
+        )}
 
         {/* ─── Section 2: Hero Row ──────────────────────────────────────── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 28 }}>
@@ -513,7 +544,7 @@ export const ProjectMonitor: React.FC<Props> = ({ projectId, onBack, onOpenProje
                     {hotspot.filePath}
                   </p>
                   <span style={{ fontSize: 10, color: 'var(--ink-muted)' }}>
-                    +{hotspot.growthRate} {lang === 'pt' ? 'problemas/análise' : lang === 'es' ? 'problemas/análisis' : lang === 'fr' ? 'problèmes/analyse' : lang === 'de' ? 'Probleme/Scan' : 'issues/scan'}
+                    +{hotspot.growthRate} {t('projectView.issuesPerScan')}
                   </span>
                 </div>
               )

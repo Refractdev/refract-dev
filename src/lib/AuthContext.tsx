@@ -219,6 +219,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let initialSessionHandled = false
 
+    const persistGitHubTokenIfPresent = async (currentSession: Session) => {
+      if (!currentSession.provider_token) return
+      const { error } = await supabase
+        .from('users')
+        .update({ github_token: currentSession.provider_token })
+        .eq('id', currentSession.user.id)
+      if (error) {
+        console.warn('[auth] failed to persist github_token:', error.message)
+      }
+    }
+
     const loadProfileAsync = (currentSession: Session) => {
       window.setTimeout(() => {
         void ensureProfileForSession(currentSession).finally(() => {
@@ -227,6 +238,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             doneLoading()
           }
         })
+      }, 0)
+    }
+
+    const persistAndLoadProfile = (currentSession: Session) => {
+      // Defer Supabase calls outside onAuthStateChange to avoid auth deadlocks
+      // that hang all client queries (including project loads).
+      window.setTimeout(() => {
+        void (async () => {
+          await persistGitHubTokenIfPresent(currentSession)
+          await ensureProfileForSession(currentSession)
+          if (!initialSessionHandled) {
+            initialSessionHandled = true
+            doneLoading()
+          }
+        })()
       }, 0)
     }
 
@@ -241,7 +267,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           void syncAnalyticsIdentity(currentSession.user.id, {
             email: currentSession.user.email ?? undefined,
           })
-          loadProfileAsync(currentSession)
+          if (currentSession.provider_token) {
+            await persistGitHubTokenIfPresent(currentSession)
+            await ensureProfileForSession(currentSession)
+            if (!initialSessionHandled) {
+              initialSessionHandled = true
+              doneLoading()
+            }
+          } else {
+            loadProfileAsync(currentSession)
+          }
         } else {
           setProfile(null)
         }
@@ -256,7 +291,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s)
 
       if (s?.user?.id) {
@@ -264,16 +299,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: s.user.email ?? undefined,
         })
 
-        // Persist the GitHub OAuth provider_token so the server can use it.
-        // provider_token is only present immediately after OAuth sign-in/sign-up.
         if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && s.provider_token) {
-          void supabase
-            .from('users')
-            .update({ github_token: s.provider_token })
-            .eq('id', s.user.id)
+          persistAndLoadProfile(s)
+        } else {
+          loadProfileAsync(s)
         }
-
-        loadProfileAsync(s)
       } else {
         setProfile(null)
         if (!initialSessionHandled) {

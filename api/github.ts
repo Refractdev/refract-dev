@@ -1,60 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getAdminSupabaseClient } from './_lib/supabase'
+import { getAuthenticatedUser } from './_lib/auth'
+import { githubRequest } from './_lib/github'
 import { checkRateLimit, applyRateLimitHeaders } from './_lib/ratelimit'
-
-const GITHUB_API_BASE = 'https://api.github.com'
-
-async function githubRequest(
-  token: string,
-  path: string,
-  init?: RequestInit
-): Promise<any> {
-  const response = await fetch(`${GITHUB_API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers ?? {}),
-    },
-  })
-
-  if (!response.ok) {
-    const errorPayload = await response.json().catch(() => ({}))
-    throw new Error(errorPayload.message ?? `GitHub request failed (${response.status})`)
-  }
-
-  return response.json()
-}
-
-async function getGitHubToken(authHeader: string | undefined): Promise<string> {
-  if (!authHeader?.startsWith('Bearer ')) {
-    throw new Error('Missing authorization header')
-  }
-  const supabase = getAdminSupabaseClient()
-  const accessToken = authHeader.replace('Bearer ', '')
-  const { data: { user }, error } = await supabase.auth.getUser(accessToken)
-  if (error || !user) throw new Error('Invalid session')
-
-  const { data: sessionData, error: sessionError } = await supabase.auth.admin.getUserById(user.id)
-  if (sessionError || !sessionData?.user) throw new Error('Failed to get user session')
-
-  // Get the provider_token from the user's identities
-  const identities = sessionData.user.identities ?? []
-  const githubIdentity = identities.find((id: any) => id.provider === 'github')
-  const providerToken = (githubIdentity as any)?.identity_data?.provider_token ?? null
-
-  if (!providerToken) {
-    // Try getting from session
-    const { data: { session } } = await supabase.auth.getSession()
-    const token = session?.provider_token
-    if (!token) throw new Error('GitHub not connected - please login with GitHub')
-    return token
-  }
-
-  return providerToken
-}
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
@@ -217,21 +164,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = req.query.action as string
 
   try {
-    const supabaseAdmin = getAdminSupabaseClient()
-    const authHeader = req.headers.authorization
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing authorization header' })
-    }
-    const accessToken = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(accessToken)
-    if (userError || !user) return res.status(401).json({ error: 'Invalid session' })
+    let user: { id: string }
+    let plan: string
+    let githubToken: string | null
 
-    const { data: profile } = await supabaseAdmin
-      .from('users')
-      .select('plan')
-      .eq('id', user.id)
-      .maybeSingle()
-    const plan: string = (profile as any)?.plan ?? 'free'
+    try {
+      const auth = await getAuthenticatedUser(req.headers.authorization)
+      user = auth.user
+      plan = auth.plan
+      githubToken = auth.githubToken
+    } catch (err: any) {
+      const message = err?.message ?? 'Invalid session'
+      const status = message === 'Missing authorization header' || message === 'Invalid session' ? 401 : 500
+      return res.status(status).json({ error: message })
+    }
 
     const rateResult = await checkRateLimit(user.id, plan, 'github')
     applyRateLimitHeaders(res, rateResult)
@@ -242,7 +188,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    const token = await getGitHubToken(req.headers.authorization)
+    if (!githubToken) {
+      return res.status(401).json({ error: 'GitHub not connected - please login with GitHub' })
+    }
+
+    const token = githubToken
 
     switch (action) {
       case 'repos': {

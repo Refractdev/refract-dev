@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, GitBranch, ArrowRight, Zap, Activity, Wrench } from 'lucide-react'
+import { Plus, GitBranch, ArrowRight, Zap, Activity, Wrench, FlaskConical, Loader2 } from 'lucide-react'
 import { Page } from '../components/Sidebar'
 import { Project } from '../shared/types'
 import { useAuth } from '../lib/AuthContext'
 import { NewProjectModal } from '../components/NewProjectModal'
 import { getRecentProjects } from '../lib/db'
 import { useTranslation } from '../hooks/useTranslation'
+import { createSampleProject, SAMPLE_FILES } from '../lib/sampleProject'
+import { useFiles } from '../context/FilesContext'
 
 interface HomePageProps {
   onNavigate: (page: Page | string, params?: any) => void
@@ -47,10 +49,12 @@ const StatusBadge: React.FC<{ status: string; t: (key: string) => string }> = ({
 export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
   const { profile } = useAuth()
   const { t, lang } = useTranslation()
+  const { setFileMap, setProjectId } = useFiles()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadingSample, setLoadingSample] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -76,6 +80,24 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
   const analysedCount = projects.filter((p: Project) => normalizeStatus(p.status) === 'Refracted').length
 
   const pluralSuffix = lang === 'de' ? (projects.length !== 1 ? 'e' : '') : (projects.length !== 1 ? 's' : '')
+
+  const handleTrySample = async () => {
+    if (!profile?.id || loadingSample) return
+    setLoadingSample(true)
+    setError(null)
+    try {
+      const project = await createSampleProject(profile.id)
+      setProjectId(project.id)
+      setFileMap(new Map(Object.entries(SAMPLE_FILES)))
+      setProjects((prev) => [project, ...prev])
+      onNavigate('project-view', { projectId: project.id })
+    } catch (err) {
+      console.error('Failed to create sample project:', err)
+      setError(err instanceof Error ? err.message : 'Failed to create sample project')
+    } finally {
+      setLoadingSample(false)
+    }
+  }
 
   return (
     <div className="relative min-h-full h-full overflow-y-auto bg-[var(--canvas-soft)] px-6 py-12 md:px-16 md:py-20 select-none stagger-list box-sizing">
@@ -113,12 +135,20 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
 
           {/* Quick actions — only appears if no projects */}
           {!loading && !hasProjects && (
-            <div className="pt-2">
+            <div className="pt-2 flex flex-wrap items-center gap-3">
               <button 
                 onClick={() => setShowModal(true)} 
                 className="btn btn-primary shadow-sm rounded-pill px-6"
               >
                 <Plus size={16} /> {t('home.actions.addFirst')}
+              </button>
+              <button
+                onClick={handleTrySample}
+                disabled={loadingSample}
+                className="btn btn-secondary rounded-pill px-6"
+              >
+                {loadingSample ? <Loader2 size={16} className="animate-spin" /> : <FlaskConical size={16} />}
+                {t('home.actions.trySample')}
               </button>
             </div>
           )}
@@ -151,9 +181,16 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                   <div className="w-[20%] h-2.5 bg-[var(--canvas-soft-2)] rounded-xs shimmer" />
                 </div>
               ))
+            ) : !hasProjects ? (
+              <div className="card flex flex-col items-center justify-center gap-3 min-h-[120px] py-8 px-5 border border-dashed border-[var(--hairline-strong)] bg-transparent col-span-full md:col-span-1">
+                <p className="text-xs text-[var(--ink-muted)] text-center max-w-xs">{t('home.emptyRecent')}</p>
+                <button onClick={handleTrySample} disabled={loadingSample} className="btn btn-secondary text-xs rounded-pill px-4">
+                  {loadingSample ? <Loader2 size={12} className="animate-spin" /> : <FlaskConical size={12} />}
+                  {t('home.actions.trySample')}
+                </button>
+              </div>
             ) : (
-              <>
-                {projects.slice(0, 5).map((p: Project, idx: number) => (
+              projects.slice(0, 5).map((p: Project) => (
                   <div
                     key={p.id}
                     onClick={() => onNavigate('project-view', { projectId: p.id })}
@@ -182,8 +219,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                       </span>
                     </div>
                   </div>
-                ))}
-              </>
+                ))
             )}
           </div>
         </div>

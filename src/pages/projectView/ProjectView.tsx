@@ -18,6 +18,7 @@ import { generateReport } from '../../lib/report'
 import { CodeMap } from './CodeMap'
 import { useTranslation } from '../../hooks/useTranslation'
 import { UnifiedDiffView } from '../../components/UnifiedDiffView'
+import { ScoreRing } from '../../components/ScoreRing'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const C = {
@@ -78,14 +79,16 @@ const CategoryIcon: React.FC<{ name: string; color?: string }> = ({ name, color 
 }
 
 const ImpactBadge: React.FC<{ level: 'High' | 'Medium' | 'Low' }> = ({ level }) => {
+  const { t } = useTranslation()
   const styles: Record<string, React.CSSProperties> = {
     High: { background: 'var(--foreground)', color: 'var(--background)' },
     Medium: { background: 'var(--accent)', color: 'var(--foreground)' },
     Low: { background: 'var(--background)', color: 'var(--muted-foreground)', border: '1px solid var(--border)' },
   }
+  const label = level === 'High' ? t('projectView.impactHigh') : level === 'Medium' ? t('projectView.impactMedium') : t('projectView.impactLow')
   return (
     <span style={{ ...styles[level], fontSize: 10, borderRadius: 9999, padding: '2px 8px', fontWeight: 600, boxShadow: 'var(--shadow-border)', letterSpacing: '-0.02em' }}>
-      {level} impact
+      {label}
     </span>
   )
 }
@@ -172,7 +175,7 @@ const AnalysingPanel: React.FC<{ files: any[]; scannedFiles: string[]; activeFil
           const done = scannedFiles.includes(f.path)
           const active = activeFile === f.path
           return (
-            <div key={f.path} style={{ height: 32, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderRadius: 'var(--radius)', background: active ? 'var(--accent)' : done ? 'var(--background)' : 'transparent', boxShadow: active ? '0 0 0 1px var(--ring)' : done ? 'var(--shadow-border)' : 'none', transition: 'all 0.15s ease' }}>
+            <div key={f.path} style={{ height: 32, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderRadius: 'var(--radius)', background: active ? 'var(--accent)' : done ? 'var(--background)' : 'transparent', boxShadow: active ? '0 0 0 1px var(--ring)' : done ? '0 0 0 1px var(--hairline)' : 'none', transition: 'all 0.15s ease' }}>
               <span style={{ fontSize: 11, color: done ? 'var(--foreground)' : 'var(--muted-foreground)', fontFamily: 'var(--font-mono)', flex: 1 }}>
                 {f.name}
               </span>
@@ -223,46 +226,96 @@ const ApplyingPanel: React.FC = () => {
   )
 }
 
-// ─── Briefing panel ───────────────────────────────────────────────────────────
-const BriefingPanel: React.FC<{ text: string; onStart: () => void }> = ({ text, onStart }) => {
+// ─── Results summary panel (immediate TTV) ────────────────────────────────────
+const ResultsSummaryPanel: React.FC<{
+  result: AnalysisResult
+  score: number
+  briefingText: string
+  briefingLoading: boolean
+  onStart: () => void
+}> = ({ result, score, briefingText, briefingLoading, onStart }) => {
   const { t } = useTranslation()
-  const [displayed, setDisplayed] = useState('')
-  const [done, setDone] = useState(false)
+  const [briefingOpen, setBriefingOpen] = useState(false)
+  const { summary, issues } = result
 
-  useEffect(() => {
-    setDisplayed('')
-    setDone(false)
-    let i = 0
-    const interval = setInterval(() => {
-      i++
-      setDisplayed(text.slice(0, i))
-      if (i >= text.length) {
-        clearInterval(interval)
-        setDone(true)
-      }
-    }, 18)
-    return () => clearInterval(interval)
-  }, [text])
+  const topIssues = [...issues]
+    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+    .slice(0, 5)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '0 48px', gap: 28 }}>
-      <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--foreground)' }}>
-        <LogoMark size={32} />
+    <div style={{ padding: '32px 40px', width: '100%', maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+        <ScoreRing score={score} size={72} />
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--foreground)', marginBottom: 6, letterSpacing: '-0.02em' }}>
+            {t('projectView.resultsTitle')}
+          </h2>
+          <p style={{ fontSize: 14, color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
+            {t('projectView.resultsSubtitle', {
+              total: String(summary.total),
+              high: String(summary.high),
+              medium: String(summary.medium),
+              low: String(summary.low),
+            })}
+          </p>
+        </div>
       </div>
-      <p style={{ fontSize: 16, color: 'var(--foreground)', lineHeight: 1.6, textAlign: 'center', maxWidth: 600, minHeight: 80, letterSpacing: '-0.02em' }}>
-        {displayed}
-        {!done && <span style={{ opacity: 0.5, animation: 'blink 1s infinite' }}>|</span>}
-      </p>
-      <style>{'@keyframes blink { 0%,100% { opacity: 0 } 50% { opacity: 1 } }'}</style>
-      {done && (
-        <button
-          onClick={onStart}
-          className="btn btn-primary"
-          style={{ letterSpacing: '-0.02em' }}
-        >
-          {t('projectView.startReview')}
-        </button>
+
+      {topIssues.length > 0 && (
+        <div>
+          <p className="section-label" style={{ marginBottom: 10 }}>{t('projectView.topIssues')}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {topIssues.map((issue) => (
+              <div
+                key={issue.id}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 14px', borderRadius: 8,
+                  border: '1px solid var(--border)', background: 'var(--card)',
+                }}
+              >
+                <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--foreground)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {issue.file}
+                </span>
+                <ImpactBadge level={issue.impact} />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
+
+      {(briefingText || briefingLoading) && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setBriefingOpen((v) => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', background: 'var(--card)', border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 500, color: 'var(--foreground)',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Sparkles size={14} />
+              {t('projectView.aiBriefing')}
+            </span>
+            {briefingOpen ? <ChevronRight size={14} style={{ transform: 'rotate(90deg)' }} /> : <ChevronRight size={14} />}
+          </button>
+          {briefingOpen && (
+            <div style={{ padding: '0 16px 16px', fontSize: 14, color: 'var(--muted-foreground)', lineHeight: 1.6 }}>
+              {briefingLoading ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Loader2 size={14} className="animate-spin" /> {t('projectView.briefingLoading')}
+                </span>
+              ) : briefingText}
+            </div>
+          )}
+        </div>
+      )}
+
+      <button onClick={onStart} className="btn btn-primary" style={{ alignSelf: 'flex-start', letterSpacing: '-0.02em' }}>
+        {t('projectView.startReview')}
+      </button>
     </div>
   )
 }
@@ -347,10 +400,10 @@ const SuccessState: React.FC<{
   }
 
   const metrics = [
-    { label: lang === 'pt' ? 'Issues encontrados' : 'Issues found', value: summary.total },
-    { label: lang === 'pt' ? 'Aceites' : 'Accepted', value: acceptedCount },
-    { label: lang === 'pt' ? 'Rejeitados' : 'Rejected', value: rejected },
-    { label: 'High impact', value: summary.high },
+    { label: t('projectView.issuesFound'), value: summary.total },
+    { label: t('projectView.accepted'), value: acceptedCount },
+    { label: t('projectView.rejected'), value: rejected },
+    { label: t('projectView.impactHigh'), value: summary.high },
   ]
 
   return (
@@ -361,7 +414,7 @@ const SuccessState: React.FC<{
         {t('projectView.completeSubtitle', { count: String(Object.keys(decisions).length) })}
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, width: '100%', marginBottom: 36 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16, width: '100%', maxWidth: 640, marginBottom: 36 }}>
         {metrics.map(m => (
           <div key={m.label} className="card" style={{ padding: 20, textAlign: 'center' }}>
             <div style={{ fontSize: 28, fontWeight: 600, color: 'var(--foreground)', marginBottom: 4, letterSpacing: '-0.06em' }}>{m.value}</div>
@@ -375,18 +428,18 @@ const SuccessState: React.FC<{
           <button onClick={onCreatePR} className="btn btn-primary" style={{ gap: 8 }} disabled={creatingPR}>
             {creatingPR ? (
               <>
-                <Loader2 size={14} className="animate-spin" /> {lang === 'pt' ? 'A criar PR...' : 'Creating PR...'}
+                <Loader2 size={14} className="animate-spin" /> {t('projectView.creatingPR')}
               </>
             ) : (
               <>
-                <GitBranch size={14} /> {lang === 'pt' ? 'Criar PR' : 'Create PR'}
+                <GitBranch size={14} /> {t('projectView.createPR')}
               </>
             )}
           </button>
         )}
         {prUrl && (
           <a href={prUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ gap: 8 }}>
-            <GitBranch size={14} /> {lang === 'pt' ? 'Abrir PR no GitHub' : 'Open PR on GitHub'}
+            <GitBranch size={14} /> {t('projectView.openPRGitHub')}
           </a>
         )}
         {result && (
@@ -396,11 +449,11 @@ const SuccessState: React.FC<{
         )}
         {acceptedCount > 0 && (
           <button onClick={handleExportChangelog} className="btn btn-ghost" style={{ gap: 8 }}>
-            <Download size={14} /> {lang === 'pt' ? 'Exportar changelog' : 'Export Changelog'}
+            <Download size={14} /> {t('projectView.exportChangelog')}
           </button>
         )}
         <button onClick={onReviewAgain} className="btn btn-ghost">
-          {lang === 'pt' ? 'Rever novamente' : 'Review again'}
+          {t('projectView.reviewAgain')}
         </button>
       </div>
     </div>
@@ -753,15 +806,17 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [creatingPR, setCreatingPR] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
   const autoRunSmokeTestRef = useRef<string | null>(null)
+  const analysisStartRef = useRef<number>(0)
+  const [briefingLoading, setBriefingLoading] = useState(false)
 
-  const persistProjectAnalysis = async (summary: AnalysisResult['summary']) => {
+  const persistProjectAnalysis = async (analysisResult: AnalysisResult, durationMs?: number) => {
     if (!project?.id || project.id.startsWith('local-')) return
 
     try {
-      await persistProjectHealth(project.id, summary, 'Refracted')
+      await persistProjectHealth(project.id, analysisResult.summary, 'Refracted', analysisResult.issues, durationMs)
       setProject((current) => current ? { ...current, last_run: new Date().toISOString(), status: 'Refracted' } : current)
     } catch (err) {
-      console.error('Failed to persist project analysis health:', err)
+      console.error('Failed to persist project analysis:', err)
     }
   }
 
@@ -1237,21 +1292,15 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       }
 
       const branchName = `refract/${Date.now()}`
-      const title = lang === 'pt'
-        ? `Refract: corrigir ${result.summary.total} issues de qualidade`
-        : `Refract: fix ${result.summary.total} quality issues`
+      const title = `Refract: fix ${result.summary.total} quality issues`
       const body = [
-        lang === 'pt' ? '## Refract Refactoring' : '## Refract Refactoring',
+        '## Refract Refactoring',
         '',
-        lang === 'pt'
-          ? `Issues analisadas: ${result.summary.total}`
-          : `Issues analyzed: ${result.summary.total}`,
-        lang === 'pt'
-          ? `Issues aceites: ${Object.keys(decisions).length}`
-          : `Accepted issues: ${Object.keys(decisions).length}`,
+        `Issues analyzed: ${result.summary.total}`,
+        `Accepted issues: ${Object.keys(decisions).length}`,
         `High impact: ${result.summary.high} · Medium: ${result.summary.medium} · Low: ${result.summary.low}`,
         '',
-        lang === 'pt' ? '### Mudanças' : '### Changes',
+        '### Changes',
         ...changes.map(c => `- \`${c.filePath}\``),
       ].join('\n')
 
@@ -1321,6 +1370,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setScannedFiles([])
     setActiveFile(null)
     setRequestError(null)
+    setBriefingText('')
+    setBriefingLoading(false)
+    analysisStartRef.current = Date.now()
 
     // Serialize Map to plain object for postMessage
     const serialized: Record<string, string> = {}
@@ -1341,6 +1393,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
       if (type === 'success') {
         const analysisResult: AnalysisResult = e.data.result
+        const durationMs = Date.now() - analysisStartRef.current
         setActiveFile(null)
         setResult(analysisResult)
 
@@ -1350,34 +1403,40 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           issues_count: analysisResult.summary.total,
         })
 
-        await persistProjectAnalysis(analysisResult.summary)
-
-        try {
-          const briefing = await generateBriefing(
-            project.path,
-            analysisResult.issues,
-            analysisResult.scannedFiles,
-            combinedGuidelines,
-            lang,
-          )
-          setRequestError(null)
-          setBriefingText(briefing ?? t('projectView.briefingFallback', {
-            files: String(analysisResult.scannedFiles.length),
-            issues: String(analysisResult.summary.total),
-          }))
-        } catch (err) {
-          console.error('Failed to generate analysis briefing:', err)
-          if (err instanceof RateLimitError) {
-            setRequestError(err.message)
-          }
-          setBriefingText(t('projectView.briefingFallback', {
-            files: String(analysisResult.scannedFiles.length),
-            issues: String(analysisResult.summary.total),
-          }))
-        }
         setSelectedCat(analysisResult.issues[0]?.category ?? null)
         setCurrentIssueIdx(0)
         setPhase('briefing')
+        setBriefingLoading(true)
+
+        void persistProjectAnalysis(analysisResult, durationMs)
+
+        void (async () => {
+          try {
+            const briefing = await generateBriefing(
+              project.path,
+              analysisResult.issues,
+              analysisResult.scannedFiles,
+              combinedGuidelines,
+              lang,
+            )
+            setRequestError(null)
+            setBriefingText(briefing ?? t('projectView.briefingFallback', {
+              files: String(analysisResult.scannedFiles.length),
+              issues: String(analysisResult.summary.total),
+            }))
+          } catch (err) {
+            console.error('Failed to generate analysis briefing:', err)
+            if (err instanceof RateLimitError) {
+              setRequestError(err.message)
+            }
+            setBriefingText(t('projectView.briefingFallback', {
+              files: String(analysisResult.scannedFiles.length),
+              issues: String(analysisResult.summary.total),
+            }))
+          } finally {
+            setBriefingLoading(false)
+          }
+        })()
         return
       }
 
@@ -1440,7 +1499,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 4, padding: '2px 6px' }}>
           <GitBranch size={9} /> {project?.branch ?? 'main'}
         </span>
-        {result && <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{result.summary.total} issues</span>}
+        {result && (
+          <>
+            <ScoreRing score={computeScore(result.summary)} size={32} />
+            <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{result.summary.total} {t('projectView.issuesLabel')}</span>
+          </>
+        )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {result && (
@@ -1450,20 +1514,20 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
               className={`btn btn-sm ${activeTab === 'issues' ? 'btn-primary' : 'btn-ghost'}`}
               style={{ fontSize: 11, padding: '4px 10px' }}
             >
-              <Layers size={12} /> Issues
+              <Layers size={12} /> {t('projectView.tabIssues')}
             </button>
             <button
               onClick={() => setActiveTab('map')}
               className={`btn btn-sm ${activeTab === 'map' ? 'btn-primary' : 'btn-ghost'}`}
               style={{ fontSize: 11, padding: '4px 10px' }}
             >
-              <GitBranch size={12} /> Map
+              <GitBranch size={12} /> {t('projectView.tabMap')}
             </button>
           </div>
         )}
 
         <button onClick={runAnalysis} className="btn btn-primary btn-sm">
-          <Play size={12} /> Run Analysis
+          <Play size={12} /> {t('projectView.runAnalysisBtn')}
         </button>
       </div>
     </div>
@@ -1475,7 +1539,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
       {phase === 'reviewing' && allIssues.length > 0 && (
         <>
-          <p className="section-label" style={{ marginBottom: 12 }}>Fix Queue</p>
+          <p className="section-label" style={{ marginBottom: 12 }}>{t('projectView.fixQueue')}</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
             {[...allIssues]
               .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
@@ -1572,7 +1636,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       {phase === 'idle' && !viewingFile && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
           <Play size={28} color={C.muted} />
-          <p style={{ fontSize: 14, color: C.muted }}>{lang === 'pt' ? 'Corre a analise para detectar problemas' : 'Run analysis to detect issues'}</p>
+          <p style={{ fontSize: 14, color: C.muted }}>{t('projectView.runAnalysis')}</p>
         </div>
       )}
 
@@ -1595,7 +1659,13 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       )}
 
       {phase === 'briefing' && result && (
-        <BriefingPanel text={briefingText} onStart={() => setPhase('reviewing')} />
+        <ResultsSummaryPanel
+          result={result}
+          score={computeScore(result.summary)}
+          briefingText={briefingText}
+          briefingLoading={briefingLoading}
+          onStart={() => setPhase('reviewing')}
+        />
       )}
 
       {phase === 'applying' && (
@@ -1662,7 +1732,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                 <FileText size={13} color={C.muted} />
                 <span style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {lang === 'pt' ? 'Explicação do Código' : 'Code Explanation'}
+                  {t('projectView.codeExplanation')}
                 </span>
               </div>
               <div style={{ whiteSpace: 'pre-wrap' }}>{fileExplanation}</div>
@@ -1692,16 +1762,16 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     <div style={{ width: 280, flexShrink: 0, background: C.bg, borderLeft: `1px solid ${C.border}`, overflowY: 'auto', padding: '20px 16px' }}>
       {currentIssue && (
         <>
-          <p className="section-label" style={{ marginBottom: 10 }}>{lang === 'pt' ? 'Porque' : 'Why'}</p>
+          <p className="section-label" style={{ marginBottom: 10 }}>{t('projectView.why')}</p>
           <p style={{ fontSize: 12, color: loadingExplanation ? C.muted : 'var(--muted-foreground)', lineHeight: 1.6, marginBottom: 20, fontStyle: loadingExplanation ? 'italic' : 'normal' }}>
             {loadingExplanation ? t('projectView.analyzingIssue') : (issueExplanation ?? currentIssue.problem)}
           </p>
 
-          <p className="section-label" style={{ marginBottom: 12 }}>{lang === 'pt' ? 'Impacto' : 'Impact'}</p>
+          <p className="section-label" style={{ marginBottom: 12 }}>{t('projectView.impact')}</p>
           {[
-            { label: lang === 'pt' ? 'Severidade' : 'Severity', value: currentIssue.impact, valueColor: 'var(--foreground)' },
-            { label: lang === 'pt' ? 'Linhas' : 'Lines', value: String(currentIssue.lineEnd - currentIssue.lineStart + 1), valueColor: C.muted },
-            { label: lang === 'pt' ? 'Ficheiro' : 'File', value: currentIssue.file, valueColor: C.muted },
+            { label: t('projectView.severity'), value: currentIssue.impact, valueColor: 'var(--foreground)' },
+            { label: t('projectView.lines'), value: String(currentIssue.lineEnd - currentIssue.lineStart + 1), valueColor: C.muted },
+            { label: t('projectView.file'), value: currentIssue.file, valueColor: C.muted },
           ].map(({ label, value, valueColor }) => (
             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 11, color: C.muted }}>{label}</span>
@@ -1723,21 +1793,21 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           <div style={{ borderTop: `1px solid ${C.border}`, margin: '20px 0' }} />
 
           <button onClick={handleAccept} className="btn btn-primary" style={{ width: '100%', marginBottom: 8, justifyContent: 'center' }}>
-            <Check size={14} /> Accept
+            <Check size={14} /> {t('projectView.accept')}
           </button>
 
           <button onClick={handleReject}
             style={{ width: '100%', height: 36, background: 'transparent', color: C.text, border: `1px solid ${C.border}`, borderRadius: 100, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8, transition: 'all 0.12s ease' }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = C.red; e.currentTarget.style.color = C.red }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.text }}>
-            <X size={14} /> Reject
+            <X size={14} /> {t('projectView.reject')}
           </button>
 
           <button onClick={handleAcceptAll}
             style={{ width: '100%', height: 36, background: 'rgba(74, 222, 128, 0.08)', color: C.green, border: `1px solid ${C.green}`, borderRadius: 100, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8, transition: 'all 0.12s ease', fontWeight: 600 }}
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(74, 222, 128, 0.15)' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(74, 222, 128, 0.08)' }}>
-            <CheckCheck size={14} /> Accept All
+            <CheckCheck size={14} /> {t('projectView.acceptAll')}
           </button>
 
           <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1767,7 +1837,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: C.bg, gap: 16 }}>
           <Loader2 size={32} color={C.muted} className="animate-spin" />
           <p style={{ fontSize: 14, color: C.muted }}>
-            {lang === 'pt' ? 'A carregar repositório...' : 'Loading repository…'}
+            {t('projectView.loadingRepo')}
           </p>
         </div>
       )
@@ -1777,12 +1847,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: C.bg, gap: 20, padding: 24 }}>
         <ZapOff size={48} color={C.muted} style={{ marginBottom: 8 }} />
         <h2 style={{ fontSize: 20, color: 'var(--foreground)', fontWeight: 500, textAlign: 'center', margin: 0 }}>
-          {lang === 'pt' ? 'Ficheiros do repositório não carregados' : 'Repository files not loaded'}
+          {t('projectView.filesNotLoaded')}
         </h2>
         <p style={{ fontSize: 14, color: C.muted, textAlign: 'center', maxWidth: 400, margin: '0 0 8px', lineHeight: 1.5 }}>
-          {lang === 'pt'
-            ? 'Os ficheiros deste projecto não estão no armazenamento local. Volta a clonar o repositório para continuar.'
-            : 'The files for this project are not in local storage. Re-clone the repository to continue.'}
+          {t('projectView.filesNotLoadedDesc')}
         </p>
 
         {recloneError && (
@@ -1813,10 +1881,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
               {recloning ? (
                 <>
                   <Loader2 size={14} className="spin" />
-                  {lang === 'pt' ? 'A clonar novamente...' : 'Re-cloning...'}
+                  {t('projectView.reCloning')}
                 </>
               ) : (
-                lang === 'pt' ? 'Voltar a clonar o repositório' : 'Re-clone Repository'
+                t('projectView.reCloneRepo')
               )}
             </button>
             <button
@@ -1825,12 +1893,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
               disabled={recloning}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
             >
-              <ArrowLeft size={14} /> {lang === 'pt' ? 'Voltar' : 'Back'}
+              <ArrowLeft size={14} /> {t('projectView.back')}
             </button>
           </div>
         ) : (
           <button onClick={onBack} className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <ArrowLeft size={14} /> {lang === 'pt' ? 'Voltar' : 'Back'}
+            <ArrowLeft size={14} /> {t('projectView.back')}
           </button>
         )}
       </div>

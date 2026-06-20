@@ -1,57 +1,65 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-sans/700.css';
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/500.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Notion Design Tokens — Warm, paper-calm productivity system (default light) ───── */
+/* ─── Design Tokens — Flat, dark-first (see design.md) ───────────────── */
 :root {
   /* Brand */
   --primary: #0075de;
   --primary-active: #005bab;
   --on-primary: #ffffff;
 
-  /* Surface */
+  /* Surface — Light mode */
   --canvas: #ffffff;
-  --canvas-soft: #f6f5f4;
-  --canvas-soft-2: #f0efee;
+  --canvas-soft: #fafafa;
+  --canvas-soft-2: #f4f4f5;
   --surface-card: #ffffff;
-  --surface-strong: #f6f5f4;
+  --surface-strong: #f0f0f2;
 
-  /* Text */
-  --ink: rgba(0, 0, 0, 0.95);
-  --ink-muted: #615d59;
-  --ink-muted-soft: #a39e98;
-  --body: #31302e;
+  /* Text — Light mode */
+  --ink: rgba(0, 0, 0, 0.92);
+  --ink-muted: #6b6b80;
+  --ink-muted-soft: #a0a0b0;
+  --body: #3f3f50;
   --body-strong: #000000;
 
-  /* Hairlines */
-  --hairline: #e6e6e6;
-  --hairline-soft: #e6e6e6;
-  --hairline-strong: #cccccc;
-
-  /* Timeline (AI-action signature, mapped to Notion's decorative sticker palette) */
-  --timeline-thinking: #dd5b00; /* accent-orange */
-  --timeline-grep: #1aae39;     /* accent-green */
-  --timeline-read: #62aef0;     /* accent-sky */
-  --timeline-edit: #d6b6f6;     /* accent-purple */
-  --timeline-done: #2a9d99;     /* accent-teal */
+  /* Hairlines — Light mode */
+  --hairline: #e4e4e7;
+  --hairline-soft: #ebebed;
+  --hairline-strong: #d1d1d6;
 
   /* Semantic */
-  --semantic-error: #dd5b00;    /* accent-orange */
-  --semantic-success: #1aae39;  /* accent-green */
+  --semantic-error: #ef4444;
+  --semantic-success: #22c55e;
+  --semantic-warning: #f59e0b;
+
+  /* Timeline (AI-action signature) */
+  --timeline-thinking: #f97316;
+  --timeline-grep: #22c55e;
+  --timeline-read: #60a5fa;
+  --timeline-edit: #a78bfa;
+  --timeline-done: #14b8a6;
 
   /* Links */
   --link: #0075de;
   --link-deep: #005bab;
 
-  /* Shadows: subtle hairline + micro layered shadow */
-  --shadow-level-1: 0 0.175px 1.041px rgba(0,0,0,0.01), 0 0.8px 2.925px rgba(0,0,0,0.02), 0 2.025px 7.847px rgba(0,0,0,0.027), 0 4px 18px rgba(0,0,0,0.04);
-  --shadow-level-2: 0 0.175px 1.041px rgba(0,0,0,0.01), 0 0.8px 2.925px rgba(0,0,0,0.02), 0 2.025px 7.847px rgba(0,0,0,0.027), 0 4px 18px rgba(0,0,0,0.04);
-  --shadow-level-3: 0 23px 52px rgba(0, 0, 0, 0.05);
-  --shadow-level-4: 0 23px 52px rgba(0, 0, 0, 0.05);
-  --shadow-level-5: 0 23px 52px rgba(0, 0, 0, 0.05);
+  /* Shadows — floating only */
+  --shadow-dropdown: 0 4px 16px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06);
+  --shadow-modal: 0 24px 64px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.08);
+  --shadow-level-1: 0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04);
+  --shadow-level-2: 0 4px 12px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.05);
+  --shadow-level-3: 0 8px 24px rgba(0,0,0,0.10);
+  --shadow-level-4: 0 16px 40px rgba(0,0,0,0.12);
+  --shadow-level-5: 0 24px 64px rgba(0,0,0,0.15);
+  --shadow-border: 0 0 0 1px var(--hairline);
 
   /* Tailwind mapping */
   --background: var(--canvas-soft);
@@ -62,49 +70,59 @@
   --popover-foreground: var(--ink);
   --muted: var(--surface-strong);
   --muted-foreground: var(--ink-muted);
-  --accent: var(--canvas-soft);
+  --accent: var(--canvas-soft-2);
   --accent-foreground: var(--ink);
   --border: var(--hairline);
   --input: var(--surface-card);
   --ring: var(--primary);
-  --radius: 8px;
+  --radius: 6px;
 
   /* Fonts */
-  --font-display: "Inter", system-ui, -apple-system, sans-serif;
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Geist", system-ui, -apple-system, sans-serif;
+  --font-sans: "Geist", system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
 }
 
-/* Sleek dark mode styling mapping for Notion */
+/* ─── Dark Mode ──────────────────────────────────────────────────────── */
 [data-theme="dark"] {
-  --primary: #2eaadc;
-  --primary-active: #4593e3;
+  --primary: #3b82f6;
+  --primary-active: #2563eb;
   --on-primary: #ffffff;
 
-  --canvas: #191919;
-  --canvas-soft: #202020;
-  --canvas-soft-2: #252525;
-  --surface-card: #202020;
-  --surface-strong: #2f2f2f;
+  --canvas: #0c0c0c;
+  --canvas-soft: #111111;
+  --canvas-soft-2: #171717;
+  --surface-card: #111111;
+  --surface-strong: #1c1c1c;
 
-  --ink: rgba(255, 255, 255, 0.95);
-  --ink-muted: #8c8c8c;
-  --ink-muted-soft: #5a5a5a;
-  --body: #b3b3b3;
+  --ink: #ededed;
+  --ink-muted: #a1a1a1;
+  --ink-muted-soft: #666666;
+  --body: #b5b5b5;
   --body-strong: #ffffff;
 
-  --hairline: #2f2f2f;
-  --hairline-soft: #252525;
-  --hairline-strong: #3f3f3f;
+  --hairline: #262626;
+  --hairline-soft: #1e1e1e;
+  --hairline-strong: #333333;
 
-  --shadow-level-1: 0 0 0 1px rgba(255, 255, 255, 0.05);
-  --shadow-level-2: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --semantic-error: #f87171;
+  --semantic-success: #4ade80;
+  --semantic-warning: #fbbf24;
 
-  --link: #2eaadc;
-  --link-deep: #4593e3;
+  --shadow-dropdown: 0 4px 16px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
+  --shadow-modal: 0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-level-1: 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-level-2: 0 0 0 1px rgba(255,255,255,0.07);
+  --shadow-level-3: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow-level-4: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-level-5: 0 16px 48px rgba(0,0,0,0.6);
+  --shadow-border: 0 0 0 1px var(--hairline);
+
+  --link: #60a5fa;
+  --link-deep: #93c5fd;
 }
 
-/* Tailwind theme inline mapping */
+/* ─── Tailwind theme inline mapping ─────────────────────────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -123,7 +141,7 @@
   --font-mono: var(--font-mono);
 }
 
-/* ─── Reset ──────────────────────────────────────────────── */
+/* ─── Reset ──────────────────────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -133,7 +151,6 @@
 html, body, #root {
   height: 100%;
   width: 100%;
-  /* Cursor marketing needs scroll; don't force hidden */
   overflow: auto;
 }
 
@@ -141,163 +158,169 @@ body {
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.5;
   letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ─── Typography ─────────────────────────────────────────── */
+/* ─── Typography ─────────────────────────────────────────────────────── */
 h1, h2, h3, h4, h5, h6, .display-text {
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 600;
   color: var(--ink);
 }
 
-/* ─── Scrollbar ───────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ─── Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: var(--ink-muted); }
+::-webkit-scrollbar-thumb { background: var(--hairline-strong); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-muted-soft); }
 
-/* ─── Global transitions ─────────────────────────────────── */
+/* ─── Global transitions ─────────────────────────────────────────────── */
 button, a {
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
 input, textarea {
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
-/* ─── Page enter animations ──────────────────────────────── */
+/* ─── Focus ring ─────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ─── Page enter ─────────────────────────────────────────────────────── */
 .page-enter {
-  animation: pageEnter 0.2s ease both;
+  animation: pageEnter 0.15s ease both;
 }
-
 @keyframes pageEnter {
   from { opacity: 0; }
-  to { opacity: 1; }
+  to   { opacity: 1; }
 }
 
-/* ─── Staggered list items (disabled for performance) ────── */
-.stagger-item {
-  /* no animation — items appear instantly */
-}
-
-/* ─── Card hover lift (subtle, no transform) ────────────── */
-
-/* ─── Buttons ─────────────────────────────────────────────── */
+/* ─── Buttons ─────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   border: none;
   cursor: pointer;
   white-space: nowrap;
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 1.0;
-  letter-spacing: -0.28px;
+  letter-spacing: -0.1px;
   border-radius: var(--radius);
-  padding: 10px 16px;
-  height: 36px; /* standard Vercel navigation CTA height */
+  padding: 0 14px;
+  height: 32px;
   text-decoration: none;
 }
 
 .btn-primary {
   background: var(--primary);
   color: var(--on-primary);
-  border-radius: 9999px;
+  border-radius: var(--radius);
 }
-.btn-primary:hover {
-  background: var(--primary-active);
-}
-.btn-primary:active {
-  opacity: 0.85;
-}
+.btn-primary:hover { background: var(--primary-active); }
+.btn-primary:active { opacity: 0.85; }
 
 .btn-secondary {
-  background: var(--surface-card);
+  background: transparent;
   color: var(--ink);
   border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  box-shadow: var(--shadow-level-1);
+  border-radius: var(--radius);
 }
 .btn-secondary:hover {
   background: var(--canvas-soft-2);
   border-color: var(--hairline-strong);
 }
-.btn-secondary:active {
-  opacity: 0.85;
-}
+.btn-secondary:active { opacity: 0.8; }
 
 .btn-ghost {
   background: transparent;
   color: var(--ink-muted);
+  border: 1px solid transparent;
 }
 .btn-ghost:hover {
   background: var(--canvas-soft-2);
   color: var(--ink);
+  border-color: var(--hairline);
 }
-.btn-ghost:active {
-  opacity: 0.85;
+.btn-ghost:active { opacity: 0.8; }
+
+.btn-danger {
+  background: color-mix(in srgb, var(--semantic-error) 10%, transparent);
+  color: var(--semantic-error);
+  border: 1px solid color-mix(in srgb, var(--semantic-error) 20%, transparent);
+}
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--semantic-error) 18%, transparent);
 }
 
 .btn-download {
   background: var(--ink);
   color: var(--canvas);
-  padding: 12px 20px;
-  height: 44px;
-  border-radius: 9999px;
+  padding: 0 20px;
+  height: 40px;
+  border-radius: var(--radius);
 }
-.btn-download:hover {
-  opacity: 0.9;
-}
+.btn-download:hover { opacity: 0.9; }
 
 .btn-sm {
-  padding: 6px 12px;
-  font-size: 13px;
-  height: 28px;
-  border-radius: 8px; /* md */
+  padding: 0 10px;
+  font-size: 12px;
+  height: 26px;
 }
 
-/* ─── Cards ───────────────────────────────────────────────── */
+.btn-lg {
+  padding: 0 20px;
+  font-size: 14px;
+  height: 38px;
+}
+
+/* pill variant — marketing only */
+.btn.rounded-pill, .btn-primary.rounded-pill, .btn-secondary.rounded-pill {
+  border-radius: 9999px;
+}
+
+/* ─── Cards ───────────────────────────────────────────────────────────── */
 .card {
   background: var(--surface-card);
   color: var(--ink);
-  border-radius: 12px; /* lg corner per Notion specs */
-  padding: 24px;
+  border-radius: 8px;
+  padding: 20px;
   border: 1px solid var(--hairline);
-  box-shadow: none; /* flat by default, hairline border only */
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 120ms ease;
 }
-
 .card:hover {
   border-color: var(--hairline-strong);
-  box-shadow: var(--shadow-level-1);
 }
 
 .card-featured {
   background: var(--ink);
   color: var(--canvas);
-  border-radius: 12px; /* lg corner */
-  padding: 24px;
+  border-radius: 8px;
+  padding: 20px;
   border: none;
-  box-shadow: var(--shadow-level-2);
 }
 
-/* ─── Badges ──────────────────────────────────────────────── */
+/* ─── Badges ──────────────────────────────────────────────────────────── */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: -0.28px;
-  border-radius: 9999px;
-  padding: 2px 8px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.1px;
+  border-radius: 4px;
+  padding: 2px 7px;
+  height: 20px;
 }
 .badge-muted {
   background: var(--surface-strong);
@@ -310,155 +333,144 @@ input, textarea {
   border: 1px solid color-mix(in srgb, var(--semantic-success) 25%, transparent);
 }
 .badge-high {
-  background: rgba(238, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--semantic-error) 10%, transparent);
   color: var(--semantic-error);
-  border: 1px solid rgba(238, 0, 0, 0.15);
+  border: 1px solid color-mix(in srgb, var(--semantic-error) 20%, transparent);
 }
 .badge-medium {
-  background: var(--canvas-soft-2);
-  color: var(--ink);
-  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--semantic-warning) 10%, transparent);
+  color: var(--semantic-warning);
+  border: 1px solid color-mix(in srgb, var(--semantic-warning) 20%, transparent);
 }
 
 /* Timeline pills */
-.badge-timeline-thinking {
-  background: var(--timeline-thinking);
-  color: #171717;
-}
-.badge-timeline-grep {
-  background: var(--timeline-grep);
-  color: #171717;
-}
-.badge-timeline-read {
-  background: var(--timeline-read);
-  color: #171717;
-}
-.badge-timeline-edit {
-  background: var(--timeline-edit);
-  color: #171717;
-}
-.badge-timeline-done {
-  background: var(--timeline-done);
-  color: var(--on-primary);
-}
+.badge-timeline-thinking { background: var(--timeline-thinking); color: #fff; }
+.badge-timeline-grep     { background: var(--timeline-grep);     color: #fff; }
+.badge-timeline-read     { background: var(--timeline-read);     color: #fff; }
+.badge-timeline-edit     { background: var(--timeline-edit);     color: #fff; }
+.badge-timeline-done     { background: var(--timeline-done);     color: #fff; }
 
-/* ─── Inputs ──────────────────────────────────────────────── */
+/* ─── Inputs ──────────────────────────────────────────────────────────── */
 .input {
-  background: var(--surface-card);
+  background: var(--canvas-soft-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
-  height: 36px;
-  padding: 8px 12px;
-  font-size: 14px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
   color: var(--ink);
   font-family: var(--font-sans);
   outline: none;
   width: 100%;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .input:focus {
-  border-color: var(--ink-muted);
-  box-shadow: var(--shadow-level-2);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
 }
 .input::placeholder { color: var(--ink-muted-soft); }
 
 .textarea {
-  background: var(--surface-card);
+  background: var(--canvas-soft-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
-  padding: 10px 12px;
-  font-size: 14px;
+  padding: 8px 10px;
+  font-size: 13px;
   color: var(--ink);
   font-family: var(--font-sans);
   outline: none;
   width: 100%;
   resize: vertical;
   line-height: 1.5;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .textarea:focus {
-  border-color: var(--ink-muted);
-  box-shadow: var(--shadow-level-2);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
 }
 
-/* ─── Section label ───────────────────────────────────────── */
+/* ─── Section label ───────────────────────────────────────────────────── */
 .section-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.88px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: var(--ink-muted);
+  color: var(--ink-muted-soft);
+  font-family: var(--font-mono);
 }
 
-/* ─── Divider ─────────────────────────────────────────────── */
+/* ─── Divider ─────────────────────────────────────────────────────────── */
 .divider { border: none; height: 1px; background: var(--hairline); }
 
-/* ─── Page titles ─────────────────────────────────────────── */
-/* Standard inner-page heading */
+/* ─── Page titles ─────────────────────────────────────────────────────── */
 .page-title {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.3px;
   color: var(--ink);
   font-family: var(--font-display);
 }
-/* Hero/landing section heading (HomePage) */
 .page-title-hero {
-  font-size: 40px;
+  font-size: 36px;
   font-weight: 700;
   line-height: 1.1;
-  letter-spacing: -1px;
+  letter-spacing: -0.75px;
   color: var(--ink);
   font-family: var(--font-display);
 }
 
-/* ─── Code surfaces ───────────────────────────────────────── */
+/* ─── Code surfaces ───────────────────────────────────────────────────── */
 code, pre, .font-mono {
   font-family: var(--font-mono);
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
-/* ─── Animations ──────────────────────────────────────────── */
+/* ─── Animations ──────────────────────────────────────────────────────── */
 @keyframes spin {
   from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to   { transform: rotate(360deg); }
 }
-.spin {
-  animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
+.spin { animation: spin 0.8s linear infinite; }
 
-/* ─── Modal animations ───────────────────────────────────── */
+/* ─── Modal animations ───────────────────────────────────────────────── */
 @keyframes backdropIn {
   from { opacity: 0; }
-  to { opacity: 1; }
+  to   { opacity: 1; }
 }
 @keyframes modalIn {
-  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  from { opacity: 0; transform: scale(0.97) translateY(6px); }
   to   { opacity: 1; transform: scale(1)    translateY(0);   }
 }
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
 }
 @keyframes pulse {
   0%, 100% { opacity: 0.3; }
-  50%       { opacity: 0.65; }
+  50%       { opacity: 0.6; }
 }
-.skeleton { background: var(--surface-strong); border-radius: 8px; animation: pulse 1.5s infinite ease-in-out; }
+.skeleton {
+  background: var(--surface-strong);
+  border-radius: 4px;
+  animation: pulse 1.4s infinite ease-in-out;
+}
 
-/* ─── Shimmer loading ────────────────────────────────────── */
+/* ─── Shimmer loading ────────────────────────────────────────────────── */
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
+  0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-
 .shimmer {
-  background: linear-gradient(90deg, var(--border) 25%, var(--muted-foreground) 50%, var(--border) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--hairline) 25%,
+    var(--surface-strong) 50%,
+    var(--hairline) 75%
+  );
   background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 4px;
+  animation: shimmer 1.4s infinite;
+  border-radius: 3px;
 }
 
-
+/* ─── Stagger item (no-op, kept for compat) ──────────────────────────── */
+.stagger-item {}

@@ -316,9 +316,12 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onOpenProject, onOpe
           ))}
         </div>
       ) : projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 mt-24">
+        <div className="flex flex-col items-center justify-center gap-4 mt-24">
           <FolderOpen size={20} className="text-[var(--ink-muted-soft)]" />
           <p className="text-xs text-[var(--ink-muted)]">{t('projects.noProjects')}</p>
+          <button onClick={() => setShowModal(true)} className="btn btn-primary text-xs rounded-pill px-5">
+            <Plus size={14} /> {t('projects.emptyCta')}
+          </button>
         </div>
       ) : (
         <div style={{

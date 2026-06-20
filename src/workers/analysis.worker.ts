@@ -7,7 +7,7 @@ self.onmessage = async (e: MessageEvent) => {
   try {
     const { files: filesObj } = e.data;
     if (!filesObj) {
-      self.postMessage({ type: 'error', error: 'Nenhum ficheiro recebido para análise.' });
+      self.postMessage({ type: 'error', error: 'No files received for analysis.' });
       return;
     }
     const filesMap = new Map<string, string>(Object.entries(filesObj));

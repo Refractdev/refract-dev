@@ -616,8 +616,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
 
       case 'integrations':
         const isGitHubConnected = Boolean(
-          session?.user?.identities?.some(id => id.provider === 'github') ||
-          (session?.user?.app_metadata?.providers as string[] | undefined)?.includes('github')
+          profile?.github_token ||
+          session?.provider_token
         )
         return (
           <div className="space-y-6 max-w-3xl page-enter">
