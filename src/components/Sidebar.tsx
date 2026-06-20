@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   ShieldAlert,
   User,
+  Users,
   Globe,
   Menu,
   X,
@@ -113,6 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'preferences',  label: t('settings.tabs.preferences'),  icon: Globe },
     { id: 'guidelines',   label: t('settings.tabs.guidelines'),   icon: BookOpen },
     { id: 'integrations', label: t('settings.tabs.integrations'), icon: GitFork },
+    { id: 'team',         label: t('settings.tabs.team'),         icon: Users },
     { id: 'danger',       label: t('settings.tabs.danger'),       icon: ShieldAlert },
   ];
 

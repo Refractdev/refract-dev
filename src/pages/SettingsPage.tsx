@@ -18,7 +18,13 @@ import {
   ExternalLink,
   Plus,
   RefreshCw,
-  X
+  X,
+  Users,
+  UserPlus,
+  BookOpen,
+  BarChart3,
+  GitPullRequest,
+  ListChecks,
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
@@ -705,6 +711,78 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )
+
+      case 'team':
+        return (
+          <div className="space-y-6 max-w-4xl page-enter">
+            <div className="card p-6 space-y-2">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-xl bg-[var(--canvas-soft)] border border-[var(--hairline)] flex items-center justify-center text-[var(--primary)]">
+                  <Users size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.team.title')}</h3>
+                  <p className="text-sm text-[var(--ink-muted)]">{t('settings.team.subtitle')}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[
+                {
+                  id: 'members',
+                  icon: UserPlus,
+                  title: t('settings.team.membersTitle'),
+                  desc: t('settings.team.membersDesc'),
+                },
+                {
+                  id: 'guidelines',
+                  icon: BookOpen,
+                  title: t('settings.team.guidelinesTitle'),
+                  desc: t('settings.team.guidelinesDesc'),
+                },
+                {
+                  id: 'dashboard',
+                  icon: BarChart3,
+                  title: t('settings.team.dashboardTitle'),
+                  desc: t('settings.team.dashboardDesc'),
+                },
+                {
+                  id: 'cicd',
+                  icon: GitPullRequest,
+                  title: t('settings.team.cicdTitle'),
+                  desc: t('settings.team.cicdDesc'),
+                },
+                {
+                  id: 'review',
+                  icon: ListChecks,
+                  title: t('settings.team.reviewTitle'),
+                  desc: t('settings.team.reviewDesc'),
+                },
+              ].map(item => (
+                <div key={item.id} className="card p-5 flex flex-col justify-between min-h-[160px] opacity-75">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <item.icon size={16} className="text-[var(--ink-muted)] shrink-0" />
+                        <span className="font-semibold text-sm text-[var(--ink)]">{item.title}</span>
+                      </div>
+                      <span className="badge badge-muted text-[10px] scale-90">{t('common.comingSoon')}</span>
+                    </div>
+                    <p className="text-xs text-[var(--ink-muted)] leading-relaxed">{item.desc}</p>
+                  </div>
+
+                  <button
+                    className="btn btn-secondary btn-sm mt-4 w-full"
+                    onClick={() => toastInfo(t('common.comingSoon'))}
+                  >
+                    {t('common.comingSoon')}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )
