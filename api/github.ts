@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getAdminSupabaseClient } from './_lib/supabase'
 import { checkRateLimit, applyRateLimitHeaders } from './_lib/ratelimit'
+import { canonicalizePath, normalizePath } from '../src/engine/path'
 
 const GITHUB_API_BASE = 'https://api.github.com'
 
@@ -21,8 +22,8 @@ async function githubRequest(
   })
 
   if (!response.ok) {
-    const errorPayload = await response.json().catch(() => ({}))
-    throw new Error(errorPayload.message ?? `GitHub request failed (${response.status})`)
+    const errorPayload = await response.json().catch(() => null) as { message?: string } | null
+    throw new Error(errorPayload?.message ?? `GitHub request failed (${response.status})`)
   }
 
   return response.json()
@@ -101,7 +102,9 @@ async function handleClone(token: string, repoUrl: string, branch?: string) {
     try {
       const contentData = await githubRequest(token, `/repos/${owner}/${repo}/contents/${file.path}?ref=${ref}`)
       if (contentData.content && contentData.encoding === 'base64') {
-        files[file.path] = Buffer.from(contentData.content, 'base64').toString('utf-8')
+        const normalizedPath = normalizePath(file.path)
+        if (!normalizedPath) continue
+        files[normalizedPath] = Buffer.from(contentData.content, 'base64').toString('utf-8')
       }
     } catch {
       // skip files that fail
@@ -130,7 +133,23 @@ async function handlePr(token: string, input: {
   changes: Array<{ filePath: string; newContent: string }>
 }) {
   const { owner, repo } = parseGitHubRepoUrl(input.repoUrl)
-  const changes = Array.from(new Map(input.changes.map((c) => [c.filePath, c])).values())
+  const canonicalChanges = input.changes.map(({ filePath, newContent }) => {
+    const result = canonicalizePath(filePath)
+    return { originalPath: filePath, canonicalPath: result.path, suspicious: result.suspicious, newContent }
+  })
+  const invalidChange = canonicalChanges.find((change) => !change.canonicalPath || change.suspicious)
+  if (invalidChange) {
+    throw new Error(`Invalid file path in PR payload: ${invalidChange.originalPath}`)
+  }
+
+  const changes = Array.from(
+    new Map(
+      canonicalChanges.map((change) => [
+        change.canonicalPath,
+        { filePath: change.canonicalPath, newContent: change.newContent },
+      ]),
+    ).values(),
+  )
 
   if (changes.length === 0) {
     throw new Error('No changes to commit')

@@ -1,5 +1,67 @@
+export interface CanonicalPathResult {
+  path: string
+  changed: boolean
+  suspicious: boolean
+}
+
+export interface CanonicalEntryCollision {
+  canonicalPath: string
+  discardedPath: string
+}
+
+export interface CanonicalizeEntriesResult<T> {
+  map: Map<string, T>
+  collisions: CanonicalEntryCollision[]
+}
+
+export function canonicalizePath(input: string): CanonicalPathResult {
+  const original = typeof input === 'string' ? input : String(input ?? '')
+  const slashNormalized = original.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '').replace(/\/$/, '')
+  const trimmedInput = slashNormalized.trim()
+  const segments = trimmedInput.split('/')
+  const normalizedSegments: string[] = []
+  let suspicious = trimmedInput !== slashNormalized
+
+  for (const rawSegment of segments) {
+    const segment = rawSegment.trim()
+    if (segment !== rawSegment) suspicious = true
+    if (!segment || segment === '.') continue
+    if (segment === '..') {
+      suspicious = true
+      normalizedSegments.pop()
+      continue
+    }
+    normalizedSegments.push(segment)
+  }
+
+  const path = normalizedSegments.join('/')
+  if (!path && trimmedInput.length > 0) suspicious = true
+
+  return {
+    path,
+    changed: path !== original,
+    suspicious,
+  }
+}
+
 export function normalizePath(input: string): string {
-  return input.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '').replace(/\/$/, '')
+  return canonicalizePath(input).path
+}
+
+export function canonicalizeEntries<T>(entries: Iterable<[string, T]>): CanonicalizeEntriesResult<T> {
+  const map = new Map<string, T>()
+  const collisions: CanonicalEntryCollision[] = []
+
+  for (const [rawPath, value] of entries) {
+    const { path } = canonicalizePath(rawPath)
+    if (!path) continue
+    if (map.has(path)) {
+      collisions.push({ canonicalPath: path, discardedPath: rawPath })
+    }
+    map.set(path, value)
+  }
+
+  return { map, collisions }
 }
 
 export function dirname(filePath: string): string {

@@ -7,6 +7,7 @@ import { useAuth } from '../lib/AuthContext';
 import { trackEvent } from '../lib/analytics';
 import { RateLimitError, cloneGitHubRepo } from '../lib/api';
 import { createProject } from '../lib/db';
+import { canonicalizeEntries } from '../engine/path';
 import type { Project } from '../shared/types';
 
 interface Props {
@@ -86,7 +87,10 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
       const repoName = getRepoNameFromUrl(url);
 
       const cloneResult = await cloneGitHubRepo(url, branch);
-      const fileMap = new Map(Object.entries(cloneResult.files));
+      const { map: fileMap, collisions } = canonicalizeEntries(Object.entries(cloneResult.files));
+      if (collisions.length > 0) {
+        console.warn('[NewProjectModal] Collapsed duplicate canonical paths from clone:', collisions);
+      }
 
       let project: Project;
 

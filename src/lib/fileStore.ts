@@ -1,3 +1,5 @@
+import { canonicalizeEntries, canonicalizePath } from '../engine/path'
+
 const DB_NAME = 'refract-files';
 const STORE_NAME = 'projects';
 const DB_VERSION = 1;
@@ -40,9 +42,14 @@ export async function saveProjectFiles(projectId: string, fileMap: Map<string, s
     const db = await openDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    
+
+    const { map, collisions } = canonicalizeEntries(fileMap.entries());
+    if (collisions.length > 0) {
+      console.warn('[IndexedDB] saveProjectFiles collapsed duplicate canonical paths:', collisions);
+    }
+
     const record: Record<string, string> = {};
-    for (const [key, value] of fileMap.entries()) {
+    for (const [key, value] of map.entries()) {
       record[key] = value;
     }
 
@@ -74,7 +81,31 @@ export async function loadProjectFiles(projectId: string): Promise<Map<string, s
       return null;
     }
 
-    return new Map<string, string>(Object.entries(record));
+    const { map, collisions } = canonicalizeEntries(Object.entries(record));
+    if (collisions.length > 0) {
+      console.warn('[IndexedDB] loadProjectFiles collapsed duplicate canonical paths:', collisions);
+    }
+
+    const needsMigration =
+      collisions.length > 0 ||
+      Object.keys(record).some((key) => canonicalizePath(key).path !== key);
+
+    if (needsMigration) {
+      const writeTx = db.transaction(STORE_NAME, 'readwrite');
+      const writeStore = writeTx.objectStore(STORE_NAME);
+      const canonicalRecord: Record<string, string> = {};
+      for (const [key, value] of map.entries()) {
+        canonicalRecord[key] = value;
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        const request = writeStore.put(canonicalRecord, projectId);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error || new Error('Failed to migrate project files'));
+      });
+    }
+
+    return map;
   } catch (error) {
     console.error('[IndexedDB] loadProjectFiles failed:', error);
     return null;

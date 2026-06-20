@@ -1,0 +1,26 @@
+{
+  "name": "@refract/embed-ui",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Self-contained Refract UI components for iframe embedding",
+  "scripts": {
+    "dev": "vite --config iframe/vite.config.ts",
+    "build": "vite build --config iframe/vite.config.ts",
+    "preview": "vite preview --config iframe/vite.config.ts"
+  },
+  "dependencies": {
+    "lucide-react": "^0.469.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  }
+}

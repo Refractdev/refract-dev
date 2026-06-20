@@ -24,6 +24,7 @@ import {
 import { useFiles } from '../context/FilesContext'
 import { useAuth } from '../lib/AuthContext'
 import { trackEvent } from '../lib/analytics'
+import { canonicalizeEntries } from '../engine/path'
 import { supabase } from '../lib/supabase'
 import type { Project } from '../shared/types'
 
@@ -152,8 +153,10 @@ export const ReposPage: React.FC<{ onNavigate: (page: string, params?: any) => v
 
     try {
       const cloneResult = await cloneGitHubRepo(branchModal.repo.html_url, branchModal.selectedBranch)
-      const files = Object.entries(cloneResult.files)
-      const fileMap = new Map<string, string>(files)
+      const { map: fileMap, collisions } = canonicalizeEntries(Object.entries(cloneResult.files))
+      if (collisions.length > 0) {
+        console.warn('[ReposPage] Collapsed duplicate canonical paths from clone:', collisions)
+      }
 
       let project: Project
       try {

@@ -1,3 +1,4 @@
+import { normalizePath } from '../../src/engine/path'
 import { githubRequest } from './github'
 
 const TEXT_PATTERN = /\.(ts|tsx|js|jsx|json|css|html|md)$/i
@@ -55,7 +56,9 @@ export async function cloneRepo(
         `/repos/${owner}/${repo}/contents/${file.path}?ref=${ref}`,
       )
       if (contentData.content && contentData.encoding === 'base64') {
-        files[file.path] = Buffer.from(contentData.content, 'base64').toString('utf-8')
+        const normalizedPath = normalizePath(file.path)
+        if (!normalizedPath) continue
+        files[normalizedPath] = Buffer.from(contentData.content, 'base64').toString('utf-8')
       }
     } catch {
       // Skip files that fail to fetch (binary, too large, etc.)

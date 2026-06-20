@@ -16,6 +16,7 @@ import { trackEvent } from '../../lib/analytics'
 import type { TransformProposal, SafetyResult } from '../../engine/types'
 import { generateReport } from '../../lib/report'
 import { applyAcceptedPatches } from '../../lib/applyIssuePatch'
+import { canonicalizeEntries, canonicalizePath, normalizePath } from '../../engine/path'
 import { CodeMap } from './CodeMap'
 import { useTranslation } from '../../hooks/useTranslation'
 import { UnifiedDiffView } from '../../components/UnifiedDiffView'
@@ -170,14 +171,20 @@ const SideBySideDiff: React.FC<{
   )
 }
 
-const normalizeProjectPath = (path: string) => path.replace(/\\/g, '/').replace(/^\/+/, '')
+const canonicalizeProjectEntries = (entries: Iterable<[string, string]>, label: string) => {
+  const { map, collisions } = canonicalizeEntries(entries)
+  if (collisions.length > 0) {
+    console.warn(`[ProjectView] Collapsed duplicate canonical paths from ${label}:`, collisions)
+  }
+  return map
+}
 
 const getFileContentForIssue = (filePath: string, fileMap: Map<string, string>) => {
-  const normalizedFilePath = normalizeProjectPath(filePath)
+  const normalizedFilePath = normalizePath(filePath)
 
   for (const [key, value] of fileMap.entries()) {
-    const normalizedKey = normalizeProjectPath(key)
-    if (normalizedKey === normalizedFilePath || normalizedKey.endsWith(`/${normalizedFilePath}`)) {
+    const normalizedKey = normalizePath(key)
+    if (normalizedKey === normalizedFilePath) {
       return { filePath: normalizedKey, content: value }
     }
   }
@@ -734,7 +741,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setRecloneError(null)
     try {
       const result = await cloneGitHubRepo(project.repo, project.branch ?? 'main')
-      setFileMap(new Map(Object.entries(result.files)))
+      setFileMap(canonicalizeProjectEntries(Object.entries(result.files), 're-clone'))
     } catch (err) {
       console.error('Failed to re-clone repository:', err)
       setRecloneError(err instanceof Error ? err.message : 'Failed to re-clone repository.')
@@ -960,7 +967,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setRecloneError(null)
     cloneGitHubRepo(project.repo, project.branch ?? 'main')
       .then((cloneResult) => {
-        setFileMap(new Map(Object.entries(cloneResult.files)))
+        setFileMap(canonicalizeProjectEntries(Object.entries(cloneResult.files), 'auto-clone'))
       })
       .catch((err) => {
         console.error('[ProjectView] Auto-clone failed:', err)
@@ -1087,12 +1094,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
   const applyProposalToMap = (baseMap: Map<string, string>, proposal: TransformProposal) => {
     const nextMap = new Map(baseMap)
-    if (proposal.movedTo) nextMap.delete(proposal.filePath)
-    nextMap.set(proposal.movedTo ?? proposal.filePath, proposal.after)
+    if (proposal.movedTo) nextMap.delete(normalizePath(proposal.filePath))
+    nextMap.set(normalizePath(proposal.movedTo ?? proposal.filePath), proposal.after)
     for (const file of proposal.newFiles ?? []) {
-      nextMap.set(file.path, file.content)
+      nextMap.set(normalizePath(file.path), file.content)
     }
-    return nextMap
+    return canonicalizeProjectEntries(nextMap.entries(), 'proposal-apply')
   }
 
   const batchApply = (baseMap: Map<string, string>, proposals: TransformProposal[]) => {
@@ -1100,7 +1107,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     const byTarget = new Map<string, TransformProposal[]>()
 
     for (const p of proposals) {
-      const target = p.movedTo ?? p.filePath
+      const target = normalizePath(p.movedTo ?? p.filePath)
       const group = byTarget.get(target) ?? []
       group.push(p)
       byTarget.set(target, group)
@@ -1109,22 +1116,22 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     for (const [, group] of byTarget) {
       if (group.length === 1) {
         const p = group[0]
-        if (p.movedTo) nextMap.delete(p.filePath)
-        nextMap.set(p.movedTo ?? p.filePath, p.after)
-        for (const f of p.newFiles ?? []) nextMap.set(f.path, f.content)
+        if (p.movedTo) nextMap.delete(normalizePath(p.filePath))
+        nextMap.set(normalizePath(p.movedTo ?? p.filePath), p.after)
+        for (const f of p.newFiles ?? []) nextMap.set(normalizePath(f.path), f.content)
       } else {
         const [winner, ...rest] = group
         console.warn(
           `batchApply: conflito em "${winner.movedTo ?? winner.filePath}" — ${rest.length} proposta(s) ignorada(s)`,
           rest.map(p => p.id),
         )
-        if (winner.movedTo) nextMap.delete(winner.filePath)
-        nextMap.set(winner.movedTo ?? winner.filePath, winner.after)
-        for (const f of winner.newFiles ?? []) nextMap.set(f.path, f.content)
+        if (winner.movedTo) nextMap.delete(normalizePath(winner.filePath))
+        nextMap.set(normalizePath(winner.movedTo ?? winner.filePath), winner.after)
+        for (const f of winner.newFiles ?? []) nextMap.set(normalizePath(f.path), f.content)
       }
     }
 
-    return nextMap
+    return canonicalizeProjectEntries(nextMap.entries(), 'batch-apply')
   }
 
   const handleAcceptAll = () => {
@@ -1337,12 +1344,17 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       // the PR would contain identical blobs and open with zero file changes.
       const patchedMap = applyAcceptedPatches(fileMap, allIssues, decisions)
 
-      const changes: Array<{ filePath: string; newContent: string }> = []
+      const changesByPath = new Map<string, { filePath: string; newContent: string }>()
       for (const [path, content] of patchedMap.entries()) {
         if (content !== fileMap.get(path)) {
-          changes.push({ filePath: path, newContent: content })
+          const candidate = canonicalizePath(path)
+          if (!candidate.path || candidate.suspicious) {
+            throw new Error(`Invalid file path in PR payload: ${path}`)
+          }
+          changesByPath.set(candidate.path, { filePath: candidate.path, newContent: content })
         }
       }
+      const changes = Array.from(changesByPath.values())
 
       if (changes.length === 0) {
         setRequestError(

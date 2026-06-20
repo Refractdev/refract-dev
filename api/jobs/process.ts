@@ -8,6 +8,7 @@ import { getInstallationToken } from '../_lib/auth'
 import { githubRequest } from '../_lib/github'
 import { throwIfDbError } from '../_lib/db'
 import { runAnalysis } from '../../src/lib/analyze'
+import { canonicalizeEntries } from '../../src/engine/path'
 import { analyzeDrift, type SnapshotData } from '../_lib/drift'
 import { cloneRepo } from '../_lib/clone'
 
@@ -75,7 +76,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
           trigger: 'jobs_process',
         })
 
-        const fileMap = new Map(Object.entries(files))
+        const { map: fileMap } = canonicalizeEntries(Object.entries(files))
         const result = await runAnalysis(fileMap)
 
         const categoryCounts: Record<string, number> = {}

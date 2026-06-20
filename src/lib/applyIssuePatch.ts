@@ -1,18 +1,17 @@
 import type { AnalysisIssue } from '../shared/types'
+import { normalizePath } from '../engine/path'
 
 export type Decision = 'accepted' | 'rejected'
-
-const normalizeProjectPath = (path: string) => path.replace(/\\/g, '/').replace(/^\/+/, '')
 
 /**
  * Resolve the fileMap key that matches an issue's filePath, tolerating
  * differences in leading slashes / nested prefixes (same logic the UI uses).
  */
 export function resolveFileKey(filePath: string, fileMap: Map<string, string>): string | null {
-  const normalizedFilePath = normalizeProjectPath(filePath)
+  const normalizedFilePath = normalizePath(filePath)
   for (const key of fileMap.keys()) {
-    const normalizedKey = normalizeProjectPath(key)
-    if (normalizedKey === normalizedFilePath || normalizedKey.endsWith(`/${normalizedFilePath}`)) {
+    const normalizedKey = normalizePath(key)
+    if (normalizedKey === normalizedFilePath) {
       return key
     }
   }
