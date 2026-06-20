@@ -43,12 +43,15 @@
     },
     "api/webhooks/github.ts": {
       "maxDuration": 10
+    },
+    "api/audit.ts": {
+      "maxDuration": 10
     }
   },
   "crons": [
     {
       "path": "/api/jobs/process",
-      "schedule": "0 0 * * *"
+      "schedule": "*/5 * * * *"
     }
   ]
 }

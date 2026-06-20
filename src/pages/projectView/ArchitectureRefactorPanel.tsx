@@ -10,6 +10,7 @@ import type {
   ArchitectureTransformResult,
   BlueprintId,
 } from '../../engine/types'
+import type { ArchApplyStats } from './types'
 
 const C = {
   bg: 'var(--background)',
@@ -40,14 +41,14 @@ const STRINGS = {
     filesMoved: 'files moved',
     newModules: 'new modules',
     layers: 'layers',
-    applyFull: 'Apply full refactor',
+    applyFull: 'Run restructure',
     transforming: 'Refactoring the whole project...',
     validating: 'Validating with the type checker...',
     repairing: 'Repairing',
     validated: 'Refactor validated',
     filesValidated: 'files validated by tsc',
     manualReview: 'files need manual review',
-    commit: 'Apply to project',
+    commit: 'Confirm & save to project',
     discard: 'Discard',
     passedAll: 'All files passed the type checker.',
     someFailed: 'Some files still have type errors and are flagged for manual review.',
@@ -68,14 +69,14 @@ const STRINGS = {
     filesMoved: 'ficheiros movidos',
     newModules: 'novos módulos',
     layers: 'camadas',
-    applyFull: 'Aplicar refatoração completa',
+    applyFull: 'Executar reestruturação',
     transforming: 'A refatorar o projeto inteiro...',
     validating: 'A validar com o type checker...',
     repairing: 'A reparar',
     validated: 'Refatoração validada',
     filesValidated: 'ficheiros validados por tsc',
     manualReview: 'ficheiros precisam de revisão manual',
-    commit: 'Aplicar ao projeto',
+    commit: 'Confirmar e guardar no projecto',
     discard: 'Descartar',
     passedAll: 'Todos os ficheiros passaram no type checker.',
     someFailed: 'Alguns ficheiros ainda têm erros de tipo e ficam marcados para revisão manual.',
@@ -89,12 +90,16 @@ interface Props {
   guidelines?: string
   projectPath?: string
   signals?: string
-  onApply: (files: Record<string, string>) => void
+  onApply: (files: Record<string, string>, stats: ArchApplyStats) => void
   onClose: () => void
 }
 
+const ARCH_STAGES: Stage[] = ['blueprint', 'planning', 'planReview', 'transforming', 'validated']
+
+const stageIndex = (stage: Stage) => ARCH_STAGES.indexOf(stage)
+
 export const ArchitectureRefactorPanel: React.FC<Props> = ({ fileMap, guidelines, projectPath, signals, onApply, onClose }) => {
-  const { lang } = useTranslation()
+  const { lang, t } = useTranslation()
   const s = STRINGS[(lang as 'en' | 'pt')] ?? STRINGS.en
 
   const profile = useMemo<ArchitectureProfile>(() => profileArchitecture(fileMap), [fileMap])
@@ -168,6 +173,25 @@ export const ArchitectureRefactorPanel: React.FC<Props> = ({ fileMap, guidelines
           <button onClick={onClose} className="btn btn-ghost btn-sm" style={{ padding: 4 }} aria-label={s.close}>
             <X size={16} />
           </button>
+        </div>
+
+        <div style={{ padding: '12px 20px 0', display: 'flex', gap: 6, alignItems: 'center' }}>
+          {ARCH_STAGES.map((st, idx) => {
+            const current = stageIndex(stage)
+            const done = idx < current
+            const active = idx === current
+            const labels = [s.targetArch, s.planSummary, s.planSummary, s.transforming, s.validated]
+            return (
+              <React.Fragment key={st}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ height: 3, borderRadius: 2, background: done || active ? C.blue : C.border, opacity: active ? 1 : done ? 0.7 : 0.35, transition: 'all 0.2s ease' }} />
+                  <p style={{ fontSize: 9, color: active ? C.text : C.muted, marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.06em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {labels[idx]}
+                  </p>
+                </div>
+              </React.Fragment>
+            )
+          })}
         </div>
 
         <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
@@ -250,7 +274,7 @@ export const ArchitectureRefactorPanel: React.FC<Props> = ({ fileMap, guidelines
               )}
 
               <button onClick={handleApplyFull} disabled={plan.moves.length === 0} className="btn btn-primary" style={{ gap: 8 }}>
-                <ArrowRight size={14} /> {s.applyFull}
+                <ArrowRight size={14} /> {t('projectView.archApplyFull')}
               </button>
             </div>
           )}
@@ -297,8 +321,16 @@ export const ArchitectureRefactorPanel: React.FC<Props> = ({ fileMap, guidelines
               )}
 
               <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => onApply(transformResult.fileMap)} className="btn btn-primary" style={{ gap: 8 }}>
-                  <GitBranch size={14} /> {s.commit}
+                <button
+                  onClick={() => onApply(transformResult.fileMap, {
+                    filesMoved: transformResult.stats.filesMoved + transformResult.stats.filesRewritten,
+                    filesValidated: transformResult.stats.filesValidated,
+                    filesManualReview: transformResult.stats.filesManualReview,
+                  })}
+                  className="btn btn-primary"
+                  style={{ gap: 8 }}
+                >
+                  <GitBranch size={14} /> {t('projectView.archCommit')}
                 </button>
                 <button onClick={onClose} className="btn btn-ghost">{s.discard}</button>
               </div>

@@ -25,6 +25,8 @@ import {
   BarChart3,
   GitPullRequest,
   ListChecks,
+  Gift,
+  Copy,
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
@@ -783,6 +785,81 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+        )
+
+      case 'invite':
+        return (
+          <div className="space-y-6 max-w-2xl page-enter">
+            <div className="card p-6 space-y-2">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-xl bg-[var(--canvas-soft)] border border-[var(--hairline)] flex items-center justify-center text-[var(--primary)]">
+                  <Gift size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.invite.title')}</h3>
+                  <p className="text-sm text-[var(--ink-muted)]">{t('settings.invite.subtitle')}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="card p-6 space-y-5 opacity-75">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm text-[var(--ink)]">{t('settings.invite.linkLabel')}</span>
+                <span className="badge badge-muted text-[10px] scale-90">{t('common.comingSoon')}</span>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  disabled
+                  readOnly
+                  placeholder={t('settings.invite.linkPlaceholder')}
+                  className="input flex-1 text-sm opacity-60"
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm shrink-0"
+                  onClick={() => toastInfo(t('common.comingSoon'))}
+                >
+                  <Copy size={14} />
+                  {t('settings.invite.copyBtn')}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg border border-[var(--hairline)] bg-[var(--canvas-soft)] p-3 text-center">
+                  <div className="text-xl font-semibold text-[var(--ink)]">0</div>
+                  <div className="text-[10px] text-[var(--ink-muted)] uppercase tracking-wide mt-1">{t('settings.invite.statInvited')}</div>
+                </div>
+                <div className="rounded-lg border border-[var(--hairline)] bg-[var(--canvas-soft)] p-3 text-center">
+                  <div className="text-xl font-semibold text-[var(--ink)]">0</div>
+                  <div className="text-[10px] text-[var(--ink-muted)] uppercase tracking-wide mt-1">{t('settings.invite.statActivated')}</div>
+                </div>
+                <div className="rounded-lg border border-[var(--hairline)] bg-[var(--canvas-soft)] p-3 text-center">
+                  <div className="text-xl font-semibold text-[var(--ink)]">0</div>
+                  <div className="text-[10px] text-[var(--ink-muted)] uppercase tracking-wide mt-1">{t('settings.invite.statCredits')}</div>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-[var(--hairline)]">
+                <p className="section-label">{t('settings.invite.howItWorksTitle')}</p>
+                <ul className="text-sm text-[var(--ink-muted)] space-y-2 list-none">
+                  <li className="flex gap-2">
+                    <span className="text-[var(--ink-muted)]">1.</span>
+                    <span>{t('settings.invite.step1')}</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-[var(--ink-muted)]">2.</span>
+                    <span>{t('settings.invite.step2')}</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-[var(--ink-muted)]">3.</span>
+                    <span>{t('settings.invite.step3')}</span>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
         )

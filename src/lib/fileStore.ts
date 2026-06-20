@@ -53,6 +53,7 @@ export async function saveProjectFiles(projectId: string, fileMap: Map<string, s
     });
   } catch (error) {
     console.error('[IndexedDB] saveProjectFiles failed:', error);
+    throw error instanceof Error ? error : new Error('Failed to save project files');
   }
 }
 

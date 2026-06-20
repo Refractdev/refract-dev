@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   User,
   Users,
+  Gift,
   Globe,
   Menu,
   X,
@@ -115,6 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'guidelines',   label: t('settings.tabs.guidelines'),   icon: BookOpen },
     { id: 'integrations', label: t('settings.tabs.integrations'), icon: GitFork },
     { id: 'team',         label: t('settings.tabs.team'),         icon: Users },
+    { id: 'invite',       label: t('settings.tabs.invite'),       icon: Gift },
     { id: 'danger',       label: t('settings.tabs.danger'),       icon: ShieldAlert },
   ];
 

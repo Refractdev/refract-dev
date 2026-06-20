@@ -36,7 +36,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const signature = req.headers['x-hub-signature-256'] as string | undefined
   const event = req.headers['x-github-event'] as string | undefined
-  const deliveryId = req.headers['x-github-delivery'] as string | undefined
 
   // Validate secret is configured before attempting verification
   let secretConfigured = true
@@ -70,20 +69,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const repoFullName: string | null = payload?.repository?.full_name ?? null
   const installationId: number | null = payload?.installation?.id ?? null
-  const branch: string | null = payload?.ref?.replace('refs/heads/', '') ?? null
+
+  // Extract event-specific fields
+  const isPR = event === 'pull_request'
+  const repoUrl = repoFullName ? `https://github.com/${repoFullName}` : null
+  const branch = isPR
+    ? (payload?.pull_request?.head?.ref ?? null)
+    : (payload?.ref?.replace('refs/heads/', '') ?? null)
+  const commitSha = isPR
+    ? (payload?.pull_request?.head?.sha ?? null)
+    : (payload?.after ?? null)
+  const prNumber = isPR ? (payload?.pull_request?.number ?? null) : null
+  const action = payload?.action ?? null
+
+  if (!repoUrl || !repoFullName) {
+    return res.status(400).json({ error: 'Missing repository information in payload' })
+  }
 
   try {
     const supabase = getAdminSupabaseClient()
 
+    // Resolve project_id from repo URL — try both with and without .git suffix
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .or(`repo.eq.${repoUrl},repo.eq.${repoUrl}.git`)
+      .limit(1)
+      .maybeSingle()
+
     const { error } = await supabase.from('webhook_events').insert({
       event_type: event,
-      delivery_id: deliveryId ?? null,
+      action,
       repo_full_name: repoFullName,
-      installation_id: installationId,
-      branch: branch,
-      payload: payload,
+      repo_url: repoUrl,
+      project_id: project?.id ?? null,
+      installation_id: installationId ?? 0,
+      branch,
+      commit_sha: commitSha,
+      pr_number: prNumber,
+      payload,
       status: 'pending',
-      received_at: new Date().toISOString(),
     })
 
     if (error) {
@@ -91,6 +116,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'Failed to queue webhook event' })
     }
 
+    console.log(`[webhook/github] Queued ${event} for ${repoFullName} → project ${project?.id ?? 'unlinked'}`)
     return res.status(200).json({ received: true })
   } catch (err: any) {
     console.error('[webhook/github] Unexpected error:', err.message)

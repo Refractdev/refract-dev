@@ -6,7 +6,7 @@ import { useAuth } from '../lib/AuthContext'
 import { NewProjectModal } from '../components/NewProjectModal'
 import { getRecentProjects } from '../lib/db'
 import { useTranslation } from '../hooks/useTranslation'
-import { createSampleProject, SAMPLE_FILES } from '../lib/sampleProject'
+import { findOrCreateSampleProject, getSampleFileMap } from '../lib/sampleProject'
 import { useFiles } from '../context/FilesContext'
 
 interface HomePageProps {
@@ -49,7 +49,7 @@ const StatusBadge: React.FC<{ status: string; t: (key: string) => string }> = ({
 export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
   const { profile } = useAuth()
   const { t, lang } = useTranslation()
-  const { setFileMap, setProjectId } = useFiles()
+  const { hydrateProjectFiles } = useFiles()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -86,10 +86,12 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
     setLoadingSample(true)
     setError(null)
     try {
-      const project = await createSampleProject(profile.id)
-      setProjectId(project.id)
-      setFileMap(new Map(Object.entries(SAMPLE_FILES)))
-      setProjects((prev) => [project, ...prev])
+      const project = await findOrCreateSampleProject(profile.id)
+      await hydrateProjectFiles(project.id, getSampleFileMap())
+      setProjects((prev) => {
+        const without = prev.filter((p) => p.id !== project.id)
+        return [project, ...without]
+      })
       onNavigate('project-view', { projectId: project.id })
     } catch (err) {
       console.error('Failed to create sample project:', err)

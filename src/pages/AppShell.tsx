@@ -5,6 +5,7 @@ import { ReposPage } from './ReposPage';
 import { SettingsPage } from './SettingsPage';
 import { ProjectView } from './projectView/ProjectView';
 import { ProjectMonitor } from './ProjectMonitor';
+import { PublicAuditPage } from './PublicAuditPage';
 import { Sidebar } from '../components/Sidebar';
 import { Topbar } from '../components/Topbar';
 import { useAuth } from '../lib/AuthContext';
@@ -145,6 +146,13 @@ export const AppShell: React.FC = () => {
   }, []);
 
   if (loading) return <SplashScreen />;
+
+  // Public audit pages — accessible without authentication
+  const auditSlug = window.location.pathname.startsWith('/audit/')
+    ? window.location.pathname.replace('/audit/', '').split('/')[0]
+    : null
+  if (auditSlug) return <PublicAuditPage slug={auditSlug} />
+
   if (!session)  return <AuthPage />;
   if (!profile)  return <SplashScreen />;
 

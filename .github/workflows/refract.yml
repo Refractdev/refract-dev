@@ -1,0 +1,88 @@
+# Refract Quality Gate — GitHub Actions Setup
+
+## Overview
+
+The Refract quality gate (`refract/quality-gate`) is a **GitHub commit status check** that is
+automatically posted to every pull request that goes through the Refract webhook pipeline.
+
+No GitHub Actions workflow is needed on your side — the check is posted by Refract's background
+job processor (`/api/jobs/process`) when it analyses your PR.
+
+---
+
+## How it works
+
+```
+GitHub PR opened/updated
+         │
+         ▼
+POST /api/webhooks/github     ← GitHub sends the webhook event
+         │
+         ▼
+webhook_events table          ← event queued with status "pending"
+         │
+         ▼ (every 5 minutes via Vercel Cron)
+/api/jobs/process
+  1. Clone repo with your GitHub token
+  2. Run Refract analysis
+  3. Save health snapshot + analysis result
+  4. POST /repos/{owner}/{repo}/statuses/{sha}   ← quality gate check
+  5. POST /repos/{owner}/{repo}/issues/{pr}/comments  ← rich PR comment
+```
+
+The commit status context is `refract/quality-gate`.
+
+---
+
+## Setup checklist
+
+### 1. Connect your repository
+
+In Refract Settings → Integrations, connect your GitHub account and link the repository
+to a project.
+
+### 2. Configure the webhook
+
+In your GitHub repository settings (`Settings → Webhooks → Add webhook`):
+
+- **Payload URL:** `https://refract.app/api/webhooks/github`
+- **Content type:** `application/json`
+- **Secret:** the value from Refract Settings → Integrations → Webhook Secret
+- **Events:** Select "Pull requests" and "Pushes"
+
+### 3. Set the quality gate threshold
+
+In Refract's Project Monitor (the shield icon in the header), set the minimum acceptable
+score (default: 60/100). PRs that score below this threshold will receive a `failure` status.
+
+### 4. Make the check required (optional)
+
+To block merges when the gate fails:
+
+1. Go to your repo `Settings → Branches → Branch protection rules`
+2. Edit (or create) the rule for your default branch
+3. Enable **"Require status checks to pass before merging"**
+4. Search for and add `refract/quality-gate`
+5. Save
+
+---
+
+## Example status check output
+
+```
+✅  refract/quality-gate   Score 82/100 — passed (threshold: 60)
+❌  refract/quality-gate   Score 43/100 — below threshold (60)
+```
+
+Clicking the status check opens the full Project Monitor for that project.
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Check not appearing | Verify the webhook is configured and receiving events (check GitHub's "Recent Deliveries") |
+| `No GitHub token found` error | Reconnect GitHub in Settings → Integrations |
+| `No project linked` error | Link the repository to a Refract project in the project settings |
+| Score always failing | Adjust the threshold in the Project Monitor header (ShieldCheck icon) |

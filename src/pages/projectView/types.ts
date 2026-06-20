@@ -23,3 +23,11 @@ export interface SnippetPair {
 export type Phase = 'idle' | 'analysing' | 'briefing' | 'reviewing' | 'refactoring' | 'applying' | 'complete'
 
 export type Decision = 'accepted' | 'rejected'
+
+export type CompletionSource = 'review' | 'architecture'
+
+export interface ArchApplyStats {
+  filesMoved: number
+  filesValidated: number
+  filesManualReview: number
+}

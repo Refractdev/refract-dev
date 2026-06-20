@@ -1,14 +1,15 @@
 import { z } from 'zod';
 
 export const ProjectSchema = z.object({
-  id:         z.string(),
-  name:       z.string(),
-  path:       z.string(),
-  repo:       z.string().nullable().optional(),
-  branch:     z.string().default('main'),
-  status:     z.enum(['Refracted', 'Pending', 'Not analysed']).default('Not analysed'),
-  created_at: z.string().optional(),
-  last_run:   z.string().nullable().optional(),
+  id:                  z.string(),
+  name:                z.string(),
+  path:                z.string(),
+  repo:                z.string().nullable().optional(),
+  branch:              z.string().default('main'),
+  status:              z.enum(['Refracted', 'Pending', 'Not analysed']).default('Not analysed'),
+  created_at:          z.string().optional(),
+  last_run:            z.string().nullable().optional(),
+  quality_gate_score:  z.number().int().min(0).max(100).default(60).optional(),
 });
 
 export const ActivitySchema = z.object({

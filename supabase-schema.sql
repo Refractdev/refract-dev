@@ -323,3 +323,45 @@ CREATE POLICY "Users can update own drift alerts" ON drift_alerts
       SELECT 1 FROM projects WHERE projects.id = drift_alerts.project_id AND projects.user_id = auth.uid()
     )
   );
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- Migration: quality_gate_score on projects
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS quality_gate_score INTEGER DEFAULT 60;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- audit_links — public shareable audit reports (no source code)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS audit_links (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  slug TEXT UNIQUE NOT NULL,
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  project_name TEXT NOT NULL,
+  score INTEGER NOT NULL,
+  issue_count INTEGER NOT NULL,
+  high INTEGER NOT NULL DEFAULT 0,
+  medium INTEGER NOT NULL DEFAULT 0,
+  low INTEGER NOT NULL DEFAULT 0,
+  scanned_files INTEGER NOT NULL DEFAULT 0,
+  category_counts JSONB DEFAULT '{}',
+  top_issues JSONB DEFAULT '[]',
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE audit_links ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can read audit links (public share)
+CREATE POLICY "public_read_audit_links" ON audit_links
+  FOR SELECT USING (true);
+
+-- Only the owner can create audit links
+CREATE POLICY "owner_insert_audit_links" ON audit_links
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Owner can delete their own audit links
+CREATE POLICY "owner_delete_audit_links" ON audit_links
+  FOR DELETE USING (auth.uid() = user_id);

@@ -4,7 +4,6 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getAdminSupabaseClient } from '../_lib/supabase'
-import { getInstallationToken } from '../_lib/auth'
 import { githubRequest } from '../_lib/github'
 import { throwIfDbError } from '../_lib/db'
 import { runAnalysis } from '../../src/lib/analyze'
@@ -34,6 +33,51 @@ function computeScore(summary: { total: number; high: number; medium: number; lo
   return Math.max(0, Math.min(100, 100 - summary.high * 10 - summary.medium * 4 - summary.low * 1))
 }
 
+/**
+ * Post a GitHub commit status check for the quality gate result.
+ * Appears as a required check in GitHub PRs when configured as a branch protection rule.
+ */
+async function postCommitStatus(
+  token: string,
+  repoPath: string,
+  sha: string,
+  passed: boolean,
+  score: number,
+  threshold: number,
+  projectId: string,
+): Promise<void> {
+  const appUrl = process.env.VITE_APP_URL?.trim() || 'https://refract.app'
+  await githubRequest(token, `/repos/${repoPath}/statuses/${sha}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      state: passed ? 'success' : 'failure',
+      target_url: `${appUrl}/project-monitor?monitorId=${projectId}`,
+      description: passed
+        ? `Score ${score}/100 — passed (threshold: ${threshold})`
+        : `Score ${score}/100 — below threshold (${threshold})`,
+      context: 'refract/quality-gate',
+    }),
+  })
+}
+
+/**
+ * Resolve the GitHub OAuth token stored in `users.github_token` for the owner
+ * of the given project. Falls back to empty string if not found.
+ */
+async function getTokenForProject(
+  supabase: ReturnType<typeof getAdminSupabaseClient>,
+  projectId: string,
+): Promise<string> {
+  const { data } = await supabase
+    .from('projects')
+    .select('user_id, users(github_token)')
+    .eq('id', projectId)
+    .single()
+  // supabase join returns users as object (single FK)
+  const users = data?.users as { github_token?: string | null } | null
+  return users?.github_token ?? ''
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
@@ -60,10 +104,17 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
 
     for (const event of events) {
       try {
-        const installationId = event.installation_id
         const repoUrl = event.repo_url
 
-        const token = await getInstallationToken(installationId)
+        if (!event.project_id) {
+          throw new Error(`No project linked to repo ${event.repo_full_name ?? repoUrl} — install the GitHub App or connect the repo first`)
+        }
+
+        const token = await getTokenForProject(supabase, event.project_id)
+
+        if (!token) {
+          throw new Error(`No GitHub token found for project ${event.project_id} — reconnect GitHub in Settings`)
+        }
 
         const files = await cloneRepo(repoUrl, token, event.branch ?? undefined)
         console.log(`[jobs/process] Cloned ${Object.keys(files).length} files from ${repoUrl}`)
@@ -139,29 +190,41 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
         if (event.event_type === 'pull_request' && event.pr_number && event.project_id) {
           const { data: project, error: projectError } = await supabase
             .from('projects')
-            .select('repo')
+            .select('repo, quality_gate_score')
             .eq('id', event.project_id)
             .single()
           throwIfDbError(projectError, '[jobs/process] Failed to load project repo')
 
           if (project?.repo) {
             const repoPath = project.repo.replace('https://github.com/', '')
+            const threshold: number = (project as any).quality_gate_score ?? 60
+            const passed = score >= threshold
             const summary = result.summary
-            const scoreChange = '—'
 
+            // Post commit status check (appears as required check in GitHub branch protection)
+            try {
+              if (event.commit_sha) {
+                await postCommitStatus(token, repoPath, event.commit_sha, passed, score, threshold, event.project_id)
+                console.log(`[jobs/process] Commit status posted: ${passed ? 'success' : 'failure'} (${score}/${threshold})`)
+              }
+            } catch (statusErr) {
+              console.error('[jobs/process] Failed to post commit status:', statusErr)
+            }
+
+            const gateEmoji = passed ? '✅' : '❌'
             const body = [
-              `## 🔍 Refract Analysis — PR #${event.pr_number}`,
+              `## ${gateEmoji} Refract Quality Gate — PR #${event.pr_number}`,
               '',
-              `**Health Score:** ${score}/100`,
-              `**Issues found:** ${summary.total} (${summary.high} high, ${summary.medium} med, ${summary.low} low)`,
-              `**Score change:** ${scoreChange}`,
+              `**Health Score:** ${score}/100 &nbsp;·&nbsp; **Threshold:** ${threshold}/100`,
+              `**Gate:** ${passed ? `✅ Passed` : `❌ Failed — score is ${threshold - score} points below threshold`}`,
+              `**Issues found:** ${summary.total} (${summary.high} high · ${summary.medium} med · ${summary.low} low)`,
               '',
               '### Issue breakdown',
               ...Object.entries(categoryCounts)
                 .sort((a, b) => b[1] - a[1])
                 .map(([cat, count]) => `- **${cat}**: ${count}`),
               '',
-              '> Generated automatically by Refract Drift Monitor',
+              '> Generated automatically by [Refract](https://refract.app) · [View full report](https://refract.app/project-monitor?monitorId=' + event.project_id + ')',
             ].join('\n')
 
             try {

@@ -4,11 +4,12 @@ import {
   FileText, ChevronLeft, ChevronRight, Check, X,
   CheckCircle2, ArrowLeft, Download, Folder, CheckCheck,
   File as FileIcon, Sparkles,
-  Terminal, Zap, Tag, RefreshCw, Layers, Globe, Shield, Activity, Copy, AlertTriangle
+  Terminal, Zap, Tag, RefreshCw, Layers, Globe, Shield, Activity, Copy, AlertTriangle, Link2
 } from 'lucide-react'
 import { Project, AnalysisResult, IssueCategory, AnalysisIssue } from '../../shared/types'
 import { LogoMark } from '../../components/Logo'
-import type { Phase, Decision } from './types'
+import type { Phase, Decision, CompletionSource, ArchApplyStats } from './types'
+import { ProjectViewStepper } from './ProjectViewStepper'
 import { getProject, saveDecision, getDecisionHistory, getSetting, persistProjectHealth } from '../../lib/db'
 import { explainIssue, explainCode, generateBriefing, RateLimitError, cloneGitHubRepo, validateProposalSafety, createGitHubPullRequest } from '../../lib/api'
 import { useFiles } from '../../context/FilesContext'
@@ -21,6 +22,8 @@ import { UnifiedDiffView } from '../../components/UnifiedDiffView'
 import { ScoreRing } from '../../components/ScoreRing'
 import { getSampleFileMap, isSampleProject } from '../../lib/sampleProject'
 import { ArchitectureRefactorPanel } from './ArchitectureRefactorPanel'
+import { useToast } from '../../components/Toast'
+import { supabase } from '../../lib/supabase'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const C = {
@@ -211,7 +214,7 @@ const AnalysingPanel: React.FC<{ files: any[]; scannedFiles: string[]; activeFil
 }
 
 // ─── Applying panel ───────────────────────────────────────────────────────────
-const ApplyingPanel: React.FC = () => {
+const ApplyingPanel: React.FC<{ issueCount?: number }> = ({ issueCount }) => {
   const { t } = useTranslation()
   const [elapsed, setElapsed] = useState(0)
 
@@ -224,8 +227,13 @@ const ApplyingPanel: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16 }}>
       <Loader2 size={28} color={C.muted} className="animate-spin" />
       <p style={{ fontSize: 14, color: C.muted, transition: 'all 0.3s ease' }}>
-        {t('projectView.preparingRefactor')}
+        {t('projectView.applyingFixes')}
       </p>
+      {issueCount != null && issueCount > 0 && (
+        <p style={{ fontSize: 12, color: C.muted }}>
+          {t('projectView.applyingFixesProgress', { count: String(issueCount) })}
+        </p>
+      )}
       <p style={{ fontSize: 11, color: C.muted, opacity: 0.5 }}>
         {elapsed}s
       </p>
@@ -240,7 +248,8 @@ const ResultsSummaryPanel: React.FC<{
   briefingText: string
   briefingLoading: boolean
   onStart: () => void
-}> = ({ result, score, briefingText, briefingLoading, onStart }) => {
+  onOpenArchitecture?: () => void
+}> = ({ result, score, briefingText, briefingLoading, onStart, onOpenArchitecture }) => {
   const { t } = useTranslation()
   const [briefingOpen, setBriefingOpen] = useState(false)
   const { summary, issues } = result
@@ -323,6 +332,20 @@ const ResultsSummaryPanel: React.FC<{
       <button onClick={onStart} className="btn btn-primary" style={{ alignSelf: 'flex-start', letterSpacing: '-0.02em' }}>
         {t('projectView.startReview')}
       </button>
+
+      <p style={{ fontSize: 12, color: C.muted, marginTop: -12 }}>
+        {t('projectView.reviewEstimate', { count: String(summary.total) })}
+      </p>
+
+      {onOpenArchitecture && (
+        <button onClick={onOpenArchitecture} className="btn btn-ghost" style={{ alignSelf: 'flex-start', gap: 8, fontSize: 13 }}>
+          <Layers size={14} />
+          {t('projectView.restructureArchitecture')}
+          <span style={{ fontSize: 9, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 9999, padding: '1px 6px', marginLeft: 4 }}>
+            {t('projectView.advancedBadge')}
+          </span>
+        </button>
+      )}
     </div>
   )
 }
@@ -338,7 +361,12 @@ const SuccessState: React.FC<{
   onCreatePR?: () => void
   creatingPR?: boolean
   prUrl?: string | null
-}> = ({ summary, decisions, issues, result, project, onReviewAgain, onCreatePR, creatingPR, prUrl }) => {
+  completionSource?: CompletionSource | null
+  archStats?: ArchApplyStats | null
+  reanalysing?: boolean
+  onUpdateScore?: () => void
+  onShareAudit?: () => void
+}> = ({ summary, decisions, issues, result, project, onReviewAgain, onCreatePR, creatingPR, prUrl, completionSource, archStats, reanalysing, onUpdateScore, onShareAudit }) => {
   const { t, lang } = useTranslation()
 
   const acceptedIssues = issues.filter((issue) => decisions[issue.id] === 'accepted')
@@ -406,20 +434,37 @@ const SuccessState: React.FC<{
     URL.revokeObjectURL(url)
   }
 
-  const metrics = [
-    { label: t('projectView.issuesFound'), value: summary.total },
-    { label: t('projectView.accepted'), value: acceptedCount },
-    { label: t('projectView.rejected'), value: rejected },
-    { label: t('projectView.impactHigh'), value: summary.high },
-  ]
+  const isArchitecture = completionSource === 'architecture'
+
+  const metrics = isArchitecture && archStats
+    ? [
+      { label: t('projectView.filesMovedMetric'), value: archStats.filesMoved },
+      { label: t('projectView.filesValidatedMetric'), value: archStats.filesValidated },
+      ...(archStats.filesManualReview > 0 ? [{ label: t('projectView.filesManualReviewMetric'), value: archStats.filesManualReview }] : []),
+    ]
+    : [
+      { label: t('projectView.issuesFound'), value: summary.total },
+      { label: t('projectView.accepted'), value: acceptedCount },
+      { label: t('projectView.rejected'), value: rejected },
+      { label: t('projectView.impactHigh'), value: summary.high },
+    ]
 
   return (
     <div style={{ padding: '40px 32px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
       <CheckCircle2 size={32} color="var(--primary)" style={{ marginBottom: 16 }} />
-      <h2 className="page-title" style={{ marginBottom: 6 }}>{t('projectView.completeTitle')}</h2>
-      <p style={{ fontSize: 16, color: 'var(--muted-foreground)', marginBottom: 32 }}>
-        {t('projectView.completeSubtitle', { count: String(Object.keys(decisions).length) })}
+      <h2 className="page-title" style={{ marginBottom: 6 }}>
+        {isArchitecture ? t('projectView.architectureCompleteTitle') : t('projectView.completeTitle')}
+      </h2>
+      <p style={{ fontSize: 16, color: 'var(--muted-foreground)', marginBottom: reanalysing ? 12 : 32 }}>
+        {isArchitecture && archStats
+          ? t('projectView.architectureCompleteSubtitle', { moved: String(archStats.filesMoved), validated: String(archStats.filesValidated) })
+          : t('projectView.completeSubtitle', { count: String(Object.keys(decisions).length) })}
       </p>
+      {reanalysing && (
+        <p style={{ fontSize: 13, color: C.muted, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Loader2 size={14} className="animate-spin" /> {t('projectView.reanalysing')}
+        </p>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16, width: '100%', maxWidth: 640, marginBottom: 36 }}>
         {metrics.map(m => (
@@ -430,8 +475,8 @@ const SuccessState: React.FC<{
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 12 }}>
-        {acceptedCount > 0 && !prUrl && (
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+        {(isArchitecture || acceptedCount > 0) && !prUrl && onCreatePR && (
           <button onClick={onCreatePR} className="btn btn-primary" style={{ gap: 8 }} disabled={creatingPR}>
             {creatingPR ? (
               <>
@@ -449,14 +494,25 @@ const SuccessState: React.FC<{
             <GitBranch size={14} /> {t('projectView.openPRGitHub')}
           </a>
         )}
-        {result && (
+        {result && !isArchitecture && (
           <button onClick={handleExportReport} className="btn btn-ghost" style={{ gap: 8 }}>
             <Download size={14} /> {t('projectView.exportReport')}
           </button>
         )}
-        {acceptedCount > 0 && (
+        {result && !isArchitecture && onShareAudit && (
+          <button onClick={onShareAudit} className="btn btn-ghost" style={{ gap: 8 }} title={t('growth.shareAuditHint')}>
+            <Link2 size={14} /> {t('growth.shareAudit')}
+          </button>
+        )}
+        {!isArchitecture && acceptedCount > 0 && (
           <button onClick={handleExportChangelog} className="btn btn-ghost" style={{ gap: 8 }}>
             <Download size={14} /> {t('projectView.exportChangelog')}
+          </button>
+        )}
+        {isArchitecture && onUpdateScore && (
+          <button onClick={onUpdateScore} className="btn btn-ghost" disabled={reanalysing} style={{ gap: 8 }}>
+            {reanalysing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {t('projectView.updateScore')}
           </button>
         )}
         <button onClick={onReviewAgain} className="btn btn-ghost">
@@ -513,7 +569,7 @@ const RefactorProposalList: React.FC<{
         const validating = validatingProposals[proposal.id]
 
         const reduced = safety?.warnings.some((warning) => warning.includes('Reduced to conservative version'))
-        const safetyLabel = !safety?.passed ? 'Failed' : reduced ? 'Reduced' : 'Safe'
+        const safetyLabel = !safety?.passed ? t('projectView.safetyFailed') : reduced ? t('projectView.safetyReduced') : t('projectView.safetySafe')
         const safetyTone = !safety?.passed ? 'color-mix(in srgb, var(--semantic-error) 15%, transparent)' : reduced ? 'color-mix(in srgb, var(--semantic-warning) 15%, transparent)' : 'color-mix(in srgb, var(--semantic-success) 12%, transparent)'
 
         return (
@@ -717,14 +773,14 @@ const RefactorProposalList: React.FC<{
                 className="btn btn-primary btn-sm"
                 disabled={safety?.passed === false}
               >
-                Apply
+                {t('projectView.proposalApply')}
               </button>
               <button onClick={() => onSkip(proposal)} className="btn btn-ghost btn-sm">
-                Skip
+                {t('projectView.proposalSkip')}
               </button>
               {safety?.passed === false && (
                 <span style={{ fontSize: 11, color: C.red, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <AlertTriangle size={12} /> Safety check failed
+                  <AlertTriangle size={12} /> {t('projectView.safetyCheckFailed')}
                 </span>
               )}
 
@@ -735,7 +791,7 @@ const RefactorProposalList: React.FC<{
                   style={{ display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${C.border}`, padding: '4px 10px', fontSize: 12, marginLeft: 'auto' }}
                 >
                   <Shield size={13} style={{ color: 'var(--ring)' }} />
-                  Verify Safety
+                  {t('projectView.verifySafety')}
                 </button>
               )}
             </div>
@@ -751,6 +807,8 @@ export interface ProjectViewProps { projectId: string | null; onBack: () => void
 
 export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) => {
   const { t, lang } = useTranslation()
+  const { info: toastInfo, success: toastSuccess, error: toastError } = useToast()
+  const [shareLoading, setShareLoading] = useState(false)
   const [phase, setPhase] = useState<Phase>('idle')
   const { fileMap, setFileMap, loadFilesForProject, hydrateProjectFiles } = useFiles()
   const workerRef = useRef<Worker | null>(null)
@@ -813,6 +871,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [creatingPR, setCreatingPR] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
   const [showArchPanel, setShowArchPanel] = useState(false)
+  const [completionSource, setCompletionSource] = useState<CompletionSource | null>(null)
+  const [archApplyStats, setArchApplyStats] = useState<ArchApplyStats | null>(null)
+  const [reanalysing, setReanalysing] = useState(false)
   const autoRunSmokeTestRef = useRef<string | null>(null)
   const autoCloneAttemptedRef = useRef<string | null>(null)
   const analysisStartRef = useRef<number>(0)
@@ -830,6 +891,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setRequestError(null)
     setRecloneError(null)
     setPrUrl(null)
+    setCompletionSource(null)
+    setArchApplyStats(null)
+    setReanalysing(false)
     autoRunSmokeTestRef.current = null
     autoCloneAttemptedRef.current = null
   }, [projectId])
@@ -848,7 +912,63 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const computeScore = (summary: AnalysisResult['summary']) =>
     Math.max(0, Math.min(100, 100 - (summary.high * 10) - (summary.medium * 4) - (summary.low * 1)))
 
-  // Derived
+  const handleShareAudit = async () => {
+    if (!result || !project) {
+      toastInfo(t('common.comingSoon'))
+      return
+    }
+    if (shareLoading) return
+    setShareLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Not authenticated')
+
+      const score = computeScore(result.summary)
+      const categoryCounts: Record<string, number> = {}
+      for (const issue of result.issues) {
+        categoryCounts[issue.category] = (categoryCounts[issue.category] ?? 0) + 1
+      }
+      const topIssues = result.issues.slice(0, 10).map((i) => ({
+        category: i.category,
+        problem: i.problem,
+        filePath: i.filePath,
+        impact: i.impact,
+      }))
+
+      const res = await fetch('/api/audit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          projectId: projectId ?? project.id,
+          projectName: project.name,
+          score,
+          summary: result.summary,
+          topIssues,
+          categoryCounts,
+          scannedFiles: result.scannedFiles?.length ?? 0,
+        }),
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? `HTTP ${res.status}`)
+      }
+
+      const { url } = await res.json()
+      await navigator.clipboard.writeText(url)
+      toastSuccess(t('growth.auditLinkCopied'))
+    } catch (err: any) {
+      console.error('[ProjectView] Share audit failed:', err)
+      toastError(err.message ?? t('common.error'))
+    } finally {
+      setShareLoading(false)
+    }
+  }
+
+
   const allIssues = result?.issues ?? []
   const visibleIssues = selectedCat ? allIssues.filter(i => i.category === selectedCat) : allIssues
   const currentIssue = visibleIssues[currentIssueIdx] ?? null
@@ -871,50 +991,50 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
   const currentHistory = currentSig ? decisionHistory[currentSig] : null
 
-  useEffect(() => {
-    if (!currentIssue) return;
-
+  const fetchIssueExplanation = async () => {
+    if (!currentIssue) return
     if (explanationCache[currentIssue.id]) {
-      setIssueExplanation(explanationCache[currentIssue.id]);
-      setLoadingExplanation(false);
-      setLoadingRefactor(false)
-      return;
+      setIssueExplanation(explanationCache[currentIssue.id])
+      return
     }
 
-    setIssueExplanation(null);
-    setLoadingExplanation(true);
+    setIssueExplanation(null)
+    setLoadingExplanation(true)
+    const issueId = currentIssue.id
+    const issueProblem = currentIssue.problem
 
-    const issueId = currentIssue.id;
-    const issuePath = currentIssue.filePath;
-    const issueProblem = currentIssue.problem;
-
-    async function getExplanation() {
-      try {
-        setLoadingRefactor(true)
-        // Read file from uploaded files
-        const fileContent = getFileContentForIssue(currentIssue.filePath, fileMap);
-        const fileSource = fileContent ? fileContent.content : '';
-        const explanation = await explainIssue(currentIssue, fileSource, combinedGuidelines);
-        setRequestError(null)
-        setIssueExplanation(explanation);
-        setExplanationCache(prev => ({ ...prev, [issueId]: explanation }));
-      } catch (err) {
-        console.error('Failed to explain issue:', err)
-        if (err instanceof RateLimitError) {
-          setRequestError(err.message)
-        }
-        setIssueExplanation(issueProblem);
-      } finally {
-        setLoadingRefactor(false)
-        setLoadingExplanation(false);
+    try {
+      const fileContent = getFileContentForIssue(currentIssue.filePath, fileMap)
+      const fileSource = fileContent ? fileContent.content : ''
+      const explanation = await explainIssue(currentIssue, fileSource, combinedGuidelines)
+      setRequestError(null)
+      setIssueExplanation(explanation)
+      setExplanationCache(prev => ({ ...prev, [issueId]: explanation }))
+    } catch (err) {
+      console.error('Failed to explain issue:', err)
+      if (err instanceof RateLimitError) {
+        setRequestError(err instanceof Error ? err.message : 'Rate limit exceeded')
       }
+      setIssueExplanation(issueProblem)
+    } finally {
+      setLoadingExplanation(false)
     }
-    getExplanation();
-  }, [currentIssue?.id, combinedGuidelines])
+  }
+
+  useEffect(() => {
+    if (!currentIssue) return
+    if (explanationCache[currentIssue.id]) {
+      setIssueExplanation(explanationCache[currentIssue.id])
+    } else {
+      setIssueExplanation(null)
+    }
+    setLoadingExplanation(false)
+  }, [currentIssue?.id])
 
   // Transition to 'complete' when all refactoring proposals are applied/skipped
   useEffect(() => {
     if (phase === 'refactoring' && !loadingRefactorEngine && refactorProposals.length === 0) {
+      setCompletionSource('review')
       setPhase('complete')
     }
   }, [phase, loadingRefactorEngine, refactorProposals.length])
@@ -923,20 +1043,24 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     async function load() {
       if (!projectId) return
 
-      await loadFilesForProject(projectId)
+      const guidelinesPromise = (async () => {
+        try {
+          const globalG = await getSetting('global_guidelines', '')
+          const projectG = await getSetting(`guideline_${projectId}`, '')
+          return [
+            globalG ? `Global Guidelines:\n${globalG}` : '',
+            projectG ? `Project Guidelines:\n${projectG}` : '',
+          ].filter(Boolean).join('\n\n')
+        } catch (err) {
+          console.error('Failed to load guidelines', err)
+          return ''
+        }
+      })()
 
-      // Load guidelines
-      try {
-        const globalG = await getSetting('global_guidelines', '')
-        const projectG = await getSetting(`guideline_${projectId}`, '')
-        const combined = [
-          globalG ? `Global Guidelines:\n${globalG}` : '',
-          projectG ? `Project Guidelines:\n${projectG}` : '',
-        ].filter(Boolean).join('\n\n')
-        setCombinedGuidelines(combined)
-      } catch (err) {
-        console.error('Failed to load guidelines', err)
-      }
+      await Promise.all([
+        loadFilesForProject(projectId),
+        guidelinesPromise.then(setCombinedGuidelines),
+      ])
 
       if (projectId.startsWith('local-')) {
         setProject({
@@ -952,10 +1076,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       }
 
       try {
-        const p = await getProject(projectId)
+        const [p, history] = await Promise.all([
+          getProject(projectId),
+          getDecisionHistory(projectId),
+        ])
         setProject(p)
         if (p?.path) {
-          const history = await getDecisionHistory(projectId)
           const historyMap: Record<string, { decision: string; created_at: string }> = {}
           for (const row of (history || [])) {
             historyMap[row.issue_signature] = { decision: row.decision, created_at: row.created_at }
@@ -1040,8 +1166,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   // Navigate to next issue
   const advance = () => {
     const next = currentIssueIdx + 1
-    if (next >= visibleIssues.length) setPhase('complete')
-    else setCurrentIssueIdx(next)
+    if (next >= visibleIssues.length) {
+      setCompletionSource('review')
+      setPhase('complete')
+    } else setCurrentIssueIdx(next)
   }
 
   const handleAccept = async () => {
@@ -1250,6 +1378,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
             setPhase('refactoring')
           } else {
             setRefactorProposals([])
+            setCompletionSource('review')
             setPhase('complete')
           }
 
@@ -1281,8 +1410,33 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       setPhase('complete')
       setLoadingRefactor(false)
       setLoadingRefactorEngine(false)
-    }, 30_000)
+    }, 60_000)
   }
+
+  const handleRunAnalysis = () => {
+    if (phase !== 'idle' && phase !== 'complete' && phase !== 'briefing') {
+      if (!window.confirm(t('projectView.confirmRerunAnalysis'))) return
+    }
+    setCompletionSource(null)
+    setArchApplyStats(null)
+    void runAnalysis()
+  }
+
+  const handleArchitectureApply = (files: Record<string, string>, stats: ArchApplyStats) => {
+    setFileMap(new Map(Object.entries(files)))
+    setShowArchPanel(false)
+    setCompletionSource('architecture')
+    setArchApplyStats(stats)
+    setPhase('complete')
+    setDecisions({})
+    setRefactorProposals([])
+  }
+
+  const handleUpdateScore = () => {
+    void runAnalysis({ background: true })
+  }
+
+  const showArchButton = result && fileMap.size > 0 && ['briefing', 'reviewing', 'complete'].includes(phase)
 
   const applyProposalToFileMap = (proposal: TransformProposal) => {
     setFileMap(applyProposalToMap(fileMap, proposal))
@@ -1385,22 +1539,29 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   }
 
   // Run analysis via Web Worker
-  const runAnalysis = async () => {
+  const runAnalysis = async (options?: { background?: boolean }) => {
     if (!project?.path || !workerRef.current) return
     if (fileMap.size === 0) return
     autoRunSmokeTestRef.current = project.id
     void trackEvent('analysis_started', {
       project_id: project.id,
       file_count: fileMap.size,
-      trigger: 'project_view',
+      trigger: options?.background ? 'background_refresh' : 'project_view',
     })
-    setPhase('analysing')
-    setDecisions({})
-    setScannedFiles([])
-    setActiveFile(null)
-    setRequestError(null)
-    setBriefingText('')
-    setBriefingLoading(false)
+
+    if (options?.background) {
+      setReanalysing(true)
+    } else {
+      setPhase('analysing')
+      setDecisions({})
+      setScannedFiles([])
+      setActiveFile(null)
+      setRequestError(null)
+      setBriefingText('')
+      setBriefingLoading(false)
+      setCompletionSource(null)
+      setArchApplyStats(null)
+    }
     analysisStartRef.current = Date.now()
 
     // Serialize Map to plain object for postMessage
@@ -1434,11 +1595,17 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
         setSelectedCat(analysisResult.issues[0]?.category ?? null)
         setCurrentIssueIdx(0)
-        setPhase('briefing')
-        setBriefingLoading(true)
+
+        if (options?.background) {
+          setReanalysing(false)
+        } else {
+          setPhase('briefing')
+          setBriefingLoading(true)
+        }
 
         void persistProjectAnalysis(analysisResult, durationMs)
 
+        if (!options?.background) {
         void (async () => {
           try {
             const briefing = await generateBriefing(
@@ -1466,13 +1633,18 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
             setBriefingLoading(false)
           }
         })()
+        }
         return
       }
 
       if (type === 'error') {
         const msg = e.data.error ?? 'Analysis failed. Please try again.'
         setRequestError(typeof msg === 'string' ? msg : 'Analysis failed. Please try again.')
-        setPhase('idle')
+        if (options?.background) {
+          setReanalysing(false)
+        } else {
+          setPhase('idle')
+        }
       }
     }
 
@@ -1555,12 +1727,27 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           </div>
         )}
 
-        {result && fileMap.size > 0 && (
-          <button onClick={() => setShowArchPanel(true)} className="btn btn-ghost btn-sm" style={{ gap: 6 }}>
-            <Layers size={12} /> {t('projectView.refactorArchitecture')}
+        {result && (
+          <button
+            onClick={handleShareAudit}
+            disabled={shareLoading}
+            className="btn btn-ghost btn-sm"
+            style={{ gap: 6 }}
+            title={t('growth.shareAuditHint')}
+          >
+            <Link2 size={12} /> {shareLoading ? '…' : t('growth.shareAudit')}
           </button>
         )}
-        <button onClick={runAnalysis} className="btn btn-primary btn-sm">
+
+        {showArchButton && (
+          <button onClick={() => setShowArchPanel(true)} className="btn btn-ghost btn-sm" style={{ gap: 6 }}>
+            <Layers size={12} /> {t('projectView.refactorArchitecture')}
+            <span style={{ fontSize: 9, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 9999, padding: '1px 5px' }}>
+              {t('projectView.advancedBadge')}
+            </span>
+          </button>
+        )}
+        <button onClick={handleRunAnalysis} className="btn btn-primary btn-sm">
           <Play size={12} /> {t('projectView.runAnalysisBtn')}
         </button>
       </div>
@@ -1699,11 +1886,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           briefingText={briefingText}
           briefingLoading={briefingLoading}
           onStart={() => setPhase('reviewing')}
+          onOpenArchitecture={() => setShowArchPanel(true)}
         />
       )}
 
       {phase === 'applying' && (
-        <ApplyingPanel />
+        <ApplyingPanel issueCount={allIssues.length} />
       )}
 
       {phase === 'refactoring' && (
@@ -1760,7 +1948,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
               {loadingFileExplanation ? t('projectView.explaining') : t('projectView.explainCode')}
             </button>
           </div>
-          <SideBySideDiff issue={currentIssue} loading={loadingRefactor} />
+          <SideBySideDiff issue={currentIssue} loading={false} />
           {fileExplanation && (
             <div style={{ background: 'var(--accent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', fontSize: 12, lineHeight: 1.7, color: 'var(--muted-foreground)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
@@ -1775,17 +1963,30 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         </div>
       )}
 
-      {(phase === 'reviewing' && !currentIssue && result) || (phase === 'complete' && result) ? (
+      {(phase === 'reviewing' && !currentIssue && result) || (phase === 'complete' && (result || completionSource === 'architecture')) ? (
         <SuccessState
-          summary={result.summary}
+          summary={result?.summary ?? { total: 0, high: 0, medium: 0, low: 0 }}
           decisions={decisions}
           issues={allIssues}
           result={result}
           project={project}
-          onReviewAgain={() => { setPhase('idle'); setResult(null); setDecisions({}); setPrUrl(null) }}
+          onReviewAgain={() => {
+            setPhase('idle')
+            setResult(null)
+            setDecisions({})
+            setPrUrl(null)
+            setCompletionSource(null)
+            setArchApplyStats(null)
+            autoRunSmokeTestRef.current = null
+          }}
           onCreatePR={handleCreatePR}
           creatingPR={creatingPR}
           prUrl={prUrl}
+          completionSource={completionSource}
+          archStats={archApplyStats}
+          reanalysing={reanalysing}
+          onUpdateScore={handleUpdateScore}
+          onShareAudit={handleShareAudit}
         />
       ) : null}
     </div>
@@ -1797,9 +1998,24 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       {currentIssue && (
         <>
           <p className="section-label" style={{ marginBottom: 10 }}>{t('projectView.why')}</p>
-          <p style={{ fontSize: 12, color: loadingExplanation ? C.muted : 'var(--muted-foreground)', lineHeight: 1.6, marginBottom: 20, fontStyle: loadingExplanation ? 'italic' : 'normal' }}>
-            {loadingExplanation ? t('projectView.analyzingIssue') : (issueExplanation ?? currentIssue.problem)}
+          <p style={{ fontSize: 12, color: 'var(--muted-foreground)', lineHeight: 1.6, marginBottom: 12 }}>
+            {issueExplanation ?? currentIssue.problem}
           </p>
+          {!issueExplanation && !loadingExplanation && (
+            <button
+              onClick={() => void fetchIssueExplanation()}
+              className="btn btn-ghost btn-sm"
+              style={{ width: '100%', marginBottom: 20, justifyContent: 'center', gap: 6 }}
+            >
+              <Sparkles size={12} /> {t('projectView.explainIssue')}
+            </button>
+          )}
+          {loadingExplanation && (
+            <p style={{ fontSize: 12, color: C.muted, fontStyle: 'italic', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Loader2 size={12} className="animate-spin" /> {t('projectView.analyzingIssue')}
+            </p>
+          )}
+          {!loadingExplanation && issueExplanation && <div style={{ marginBottom: 20 }} />}
 
           <p className="section-label" style={{ marginBottom: 12 }}>{t('projectView.impact')}</p>
           {[
@@ -1838,19 +2054,22 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           </button>
 
           <button onClick={handleAcceptAll}
-            style={{ width: '100%', height: 36, background: 'rgba(74, 222, 128, 0.08)', color: C.green, border: `1px solid ${C.green}`, borderRadius: 100, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8, transition: 'all 0.12s ease', fontWeight: 600 }}
+            style={{ width: '100%', height: 36, background: 'rgba(74, 222, 128, 0.08)', color: C.green, border: `1px solid ${C.green}`, borderRadius: 100, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4, transition: 'all 0.12s ease', fontWeight: 600 }}
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(74, 222, 128, 0.15)' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(74, 222, 128, 0.08)' }}>
             <CheckCheck size={14} /> {t('projectView.acceptAll')}
           </button>
+          <p style={{ fontSize: 10, color: C.muted, lineHeight: 1.4, marginBottom: 8, textAlign: 'center' }}>
+            {t('projectView.acceptAllHelp')}
+          </p>
 
           <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <button onClick={() => setCurrentIssueIdx(i => Math.max(0, i - 1))} className="btn btn-ghost btn-sm" style={{ padding: 4 }}>
-              <ChevronLeft size={13} /> Prev
+              <ChevronLeft size={13} /> {t('projectView.prev')}
             </button>
             <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{currentIssueIdx + 1} / {visibleIssues.length}</span>
             <button onClick={() => setCurrentIssueIdx(i => Math.min(visibleIssues.length - 1, i + 1))} className="btn btn-ghost btn-sm" style={{ padding: 4 }}>
-              Next <ChevronRight size={13} />
+              {t('projectView.next')} <ChevronRight size={13} />
             </button>
           </div>
         </>
@@ -1967,6 +2186,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg, overflow: 'hidden' }}>
       {TopBar}
+      <ProjectViewStepper phase={phase} />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {activeTab === 'map' && result ? (
           <CodeMap
@@ -1992,13 +2212,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           guidelines={combinedGuidelines}
           projectPath={project?.path || undefined}
           signals={architectureSignals}
-          onApply={(files) => {
-            setFileMap(new Map(Object.entries(files)))
-            setShowArchPanel(false)
-            setResult(null)
-            setPhase('idle')
-            autoRunSmokeTestRef.current = null
-          }}
+          onApply={handleArchitectureApply}
           onClose={() => setShowArchPanel(false)}
         />
       )}

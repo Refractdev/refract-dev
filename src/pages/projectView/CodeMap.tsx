@@ -465,6 +465,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
                             {onAcceptIssue && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); onAcceptIssue(i) }}
+                                title={t('projectView.mapDecisionHint')}
                                 style={{ 
                                   background: 'color-mix(in srgb, var(--semantic-success) 12%, transparent)', 
                                   border: '1px solid color-mix(in srgb, var(--semantic-success) 30%, transparent)', 
@@ -483,6 +484,7 @@ const CodeMapInner: React.FC<CodeMapProps & {
                             {onRejectIssue && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); onRejectIssue(i) }}
+                                title={t('projectView.mapDecisionHint')}
                                 style={{ 
                                   background: 'color-mix(in srgb, var(--semantic-error) 12%, transparent)', 
                                   border: '1px solid color-mix(in srgb, var(--semantic-error) 30%, transparent)', 
