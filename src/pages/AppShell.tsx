@@ -3,6 +3,7 @@ import { HomePage } from './HomePage';
 import { ProjectsPage } from './ProjectsPage';
 import { ReposPage } from './ReposPage';
 import { SettingsPage } from './SettingsPage';
+import { GuidelinesPage } from './GuidelinesPage';
 import { ProjectView } from './projectView/ProjectView';
 import { ProjectMonitor } from './ProjectMonitor';
 import { PublicAuditPage } from './PublicAuditPage';
@@ -57,14 +58,14 @@ function parseLocation(): { page: Page; projectId: string | null; monitorId: str
   switch (pathname) {
     case '/projects':        page = 'projects'; break;
     case '/repos':           page = 'repos'; break;
-    case '/guidelines':      page = 'settings'; break;
+    case '/guidelines':      page = 'guidelines'; break;
     case '/settings':        page = 'settings'; break;
     case '/project-view':    page = 'projectView'; break;
     case '/project-monitor': page = 'project-monitor'; break;
     default:                 page = 'home'; break;
   }
 
-  return { page, projectId, monitorId, settingsTab: pathname === '/guidelines' ? 'guidelines' : tab };
+  return { page, projectId, monitorId, settingsTab: tab };
 }
 
 function buildUrl(page: Page, extras: Record<string, string> = {}): string {
@@ -72,7 +73,7 @@ function buildUrl(page: Page, extras: Record<string, string> = {}): string {
     home:              '/',
     projects:          '/projects',
     repos:             '/repos',
-    guidelines:        '/settings',
+    guidelines:        '/guidelines',
     settings:          '/settings',
     projectView:       '/project-view',
     'project-monitor': '/project-monitor',
@@ -89,7 +90,7 @@ function getPageTitle(page: Page, t: (key: string) => string): string {
     case 'home':            return t('sidebar.dashboard');
     case 'projects':        return t('sidebar.projects');
     case 'repos':           return t('sidebar.repos');
-    case 'guidelines':
+    case 'guidelines':      return t('sidebar.guidelines');
     case 'settings':        return t('settings.title');
     case 'projectView':     return t('sidebar.projects');
     case 'project-monitor': return t('sidebar.projects');
@@ -175,9 +176,8 @@ export const AppShell: React.FC = () => {
     const normalizedPage = page === 'project-view' ? 'projectView' : (page as Page);
 
     if (normalizedPage === 'guidelines') {
-      setActivePage('settings');
-      setActiveSettingsTab('guidelines');
-      window.history.pushState({}, '', buildUrl('settings', { tab: 'guidelines' }));
+      setActivePage('guidelines');
+      window.history.pushState({}, '', buildUrl('guidelines'));
       return;
     }
 
@@ -227,6 +227,9 @@ export const AppShell: React.FC = () => {
 
       case 'repos':
         return <ReposPage onNavigate={handleNavigate} />;
+
+      case 'guidelines':
+        return <GuidelinesPage />;
 
       case 'settings':
         return <SettingsPage activeTab={activeSettingsTab} onTabChange={handleSettingsTabChange} />;

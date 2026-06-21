@@ -1,11 +1,14 @@
 import { calculateBlastRadius } from './analysis/blastRadius'
 import { evaluateImpactRadar } from './analysis/impactRadar'
+import { applyFormatting } from './formatting'
 import { runSafetyGate } from './safety/gate'
 import { runApiCentralization } from './transforms/apiCentralization'
 import { runComponentDecomposition } from './transforms/componentDecomposition'
 import { runImportCleanup } from './transforms/importCleanup'
 import { runModuleRestructuring } from './transforms/moduleRestructuring'
 import { runStateConsolidation } from './transforms/stateConsolidation'
+import type { AnalysisRigor, FormattingPrefs } from '../lib/engineSettings'
+import { passesRigorGate } from '../lib/engineSettings'
 import type { TransformProposal } from './types'
 
 const TYPE_ORDER: Record<TransformProposal['type'], number> = {
@@ -18,8 +21,16 @@ const TYPE_ORDER: Record<TransformProposal['type'], number> = {
 
 export async function analyzeForRefactoring(
   fileMap: Map<string, string>,
-  options?: { maxProposals?: number; guidelines?: string },
+  options?: {
+    maxProposals?: number
+    guidelines?: string
+    rigor?: AnalysisRigor
+    formatting?: FormattingPrefs
+  },
 ): Promise<TransformProposal[]> {
+  const rigor = options?.rigor ?? 'balanced'
+  const formatting = options?.formatting
+
   const proposalGroups = await Promise.all([
     runComponentDecomposition(fileMap, options?.guidelines),
     runStateConsolidation(fileMap, options?.guidelines),
@@ -44,9 +55,26 @@ export async function analyzeForRefactoring(
 
   const safeProposals = enriched
     .map((proposal) => {
-      return runSafetyGate(proposal, fileMap)
+      const formatted = formatting
+        ? {
+            ...proposal,
+            after: applyFormatting(proposal.after, formatting),
+            newFiles: proposal.newFiles?.map(file => ({
+              ...file,
+              content: applyFormatting(file.content, formatting),
+            })),
+          }
+        : proposal
+      return runSafetyGate(formatted, fileMap)
     })
     .filter((proposal) => proposal.safetyResult?.passed)
+    .filter((proposal) =>
+      passesRigorGate(
+        rigor,
+        proposal.blastRadius.breakageSurface,
+        proposal.safetyResult?.warnings ?? [],
+      )
+    )
     .filter((proposal) => proposal.after !== proposal.before || proposal.movedTo || (proposal.newFiles?.length ?? 0) > 0)
     .sort((left, right) => {
       const blastDiff = left.blastRadius.breakageSurface - right.blastRadius.breakageSurface

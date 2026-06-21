@@ -18,6 +18,7 @@ import {
   Globe,
   Menu,
   X,
+  Cpu,
 } from 'lucide-react';
 import { LogoMark } from './Logo';
 import { useAuth } from '../lib/AuthContext';
@@ -113,6 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const settingsItems = [
     { id: 'profile',      label: t('settings.tabs.profile'),      icon: User },
     { id: 'preferences',  label: t('settings.tabs.preferences'),  icon: Globe },
+    { id: 'engine',       label: t('settings.tabs.engine'),       icon: Cpu },
     { id: 'guidelines',   label: t('settings.tabs.guidelines'),   icon: BookOpen },
     { id: 'integrations', label: t('settings.tabs.integrations'), icon: GitFork },
     { id: 'team',         label: t('settings.tabs.team'),         icon: Users },

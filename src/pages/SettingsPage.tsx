@@ -26,15 +26,22 @@ import {
   GitPullRequest,
   ListChecks,
   Gift,
+  Cpu,
   Copy,
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 
 import { supabase, UserProfile } from '../lib/supabase'
-import { getAllProjects, getSetting, setSetting } from '../lib/db'
+import { getSetting, setSetting } from '../lib/db'
+import {
+  loadEngineSettings,
+  saveEngineSettings,
+  type FormattingPrefs,
+} from '../lib/engineSettings'
 import { useTranslation } from '../hooks/useTranslation'
 import { useToast } from '../components/Toast'
+import { GuidelinesEditor } from '../components/GuidelinesEditor'
 
 interface SettingsPageProps {
   activeTab: string
@@ -65,11 +72,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
   const [isSavingLanguage, setIsSavingLanguage] = useState(false)
   const [languageSaved, setLanguageSaved] = useState(false)
 
-  // Guidelines States
-  const [isLoadingGuidelines, setIsLoadingGuidelines] = useState(false)
-  const [guidelinesProjects, setGuidelinesProjects] = useState<any[]>([])
-  const [globalGuidelines, setGlobalGuidelines] = useState('')
-  const [isSavingGlobal, setIsSavingGlobal] = useState(false)
+  // Engine settings
+  const [engineSettings, setEngineSettings] = useState<Awaited<ReturnType<typeof loadEngineSettings>> | null>(null)
+  const [isLoadingEngine, setIsLoadingEngine] = useState(false)
+  const [isSavingEngine, setIsSavingEngine] = useState(false)
+  const [engineSaved, setEngineSaved] = useState(false)
 
   // Danger Zone States
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -94,36 +101,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
     return () => clearTimeout(timeout)
   }, [languageSaved])
 
-  // Load guidelines when Guidelines tab becomes active
   useEffect(() => {
-    if (activeTab !== 'guidelines' || !profile?.id) return
+    if (!engineSaved) return
+    const timeout = setTimeout(() => setEngineSaved(false), 2000)
+    return () => clearTimeout(timeout)
+  }, [engineSaved])
 
-    const loadGuidelines = async () => {
-      setIsLoadingGuidelines(true)
-      try {
-        const gText = await getSetting('global_guidelines', '')
-        setGlobalGuidelines(gText)
-
-        const allProjects = await getAllProjects(profile.id)
-        const projectItems = []
-        for (const proj of allProjects) {
-          const text = await getSetting(`guideline_${proj.id}`, '')
-          projectItems.push({
-            project: proj,
-            text,
-            isSaving: false,
-            savedAt: 'Synced',
-          })
-        }
-        setGuidelinesProjects(projectItems)
-      } catch (err) {
-        console.error('Error loading guidelines in settings:', err)
-      } finally {
-        setIsLoadingGuidelines(false)
-      }
-    }
-
-    loadGuidelines()
+  useEffect(() => {
+    if (activeTab !== 'engine' || !profile?.id) return
+    setIsLoadingEngine(true)
+    loadEngineSettings()
+      .then(setEngineSettings)
+      .catch(err => console.error('Error loading engine settings:', err))
+      .finally(() => setIsLoadingEngine(false))
   }, [activeTab, profile?.id])
 
   if (!profile) {
@@ -208,38 +198,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
     }
   }
 
-  const handleSaveProjectGuideline = async (projectId: string, text: string) => {
-    setGuidelinesProjects(prev =>
-      prev.map(p => (p.project.id === projectId ? { ...p, isSaving: true } : p))
-    )
+  const handleSaveEngineSettings = async () => {
+    if (!engineSettings || isSavingEngine) return
+    setIsSavingEngine(true)
     try {
-      await setSetting(`guideline_${projectId}`, text)
-      setGuidelinesProjects(prev =>
-        prev.map(p =>
-          p.project.id === projectId
-            ? { ...p, isSaving: false, savedAt: 'Just now' }
-            : p
-        )
-      )
+      await saveEngineSettings(engineSettings)
+      setEngineSaved(true)
+      toastSuccess(t('settings.engine.saved'))
     } catch (err) {
-      console.error('[settings] Failed to save project guideline:', err)
-      toastError('Failed to save guideline. Please try again.')
-      setGuidelinesProjects(prev =>
-        prev.map(p => (p.project.id === projectId ? { ...p, isSaving: false } : p))
-      )
-    }
-  }
-
-  const handleSaveGlobalGuidelines = async () => {
-    setIsSavingGlobal(true)
-    try {
-      await setSetting('global_guidelines', globalGuidelines)
-      toastSuccess('Guidelines saved.')
-    } catch (err) {
-      console.error('[settings] Failed to save global guidelines:', err)
-      toastError('Failed to save guidelines. Please try again.')
+      console.error('[settings] Failed to save engine settings:', err)
+      toastError('Failed to save engine settings.')
     } finally {
-      setTimeout(() => setIsSavingGlobal(false), 500)
+      setIsSavingEngine(false)
     }
   }
 
@@ -530,95 +500,163 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
           </div>
         )
 
-      case 'guidelines':
+      case 'engine':
         return (
           <div className="space-y-6 max-w-3xl page-enter">
-            <div className="card p-6 space-y-2 bg-[var(--canvas-soft)] border border-[var(--hairline)]">
-              <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.guidelines.title')}</h3>
-              <p className="text-sm text-[var(--ink-muted)]">{t('settings.guidelines.subtitle')}</p>
+            <div className="card p-6 space-y-2">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-xl bg-[var(--canvas-soft)] border border-[var(--hairline)] flex items-center justify-center text-[var(--primary)]">
+                  <Cpu size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-[var(--ink)]">{t('settings.engine.title')}</h3>
+                  <p className="text-sm text-[var(--ink-muted)]">{t('settings.engine.subtitle')}</p>
+                </div>
+              </div>
             </div>
 
-            {isLoadingGuidelines ? (
+            {isLoadingEngine || !engineSettings ? (
               <div className="flex items-center gap-3 text-sm text-[var(--ink-muted)] p-6">
                 <Loader2 size={16} className="spin text-[var(--primary)]" />
                 {t('common.loading')}
               </div>
             ) : (
               <>
-                {/* Global Guidelines */}
-                <div className="card p-6 space-y-4">
-                  <div className="flex items-center justify-between">
+                {[
+                  {
+                    title: t('settings.preferences.engineModelTitle'),
+                    desc: t('settings.preferences.engineModelDesc'),
+                    key: 'model' as const,
+                    options: [
+                      { value: 'flash', label: t('settings.preferences.engineModelOptions.flash') },
+                      { value: 'pro', label: t('settings.preferences.engineModelOptions.pro') },
+                      { value: 'ultra', label: t('settings.preferences.engineModelOptions.ultra') },
+                      { value: 'hybrid', label: t('settings.preferences.engineModelOptions.hybrid') },
+                    ],
+                  },
+                  {
+                    title: t('settings.preferences.intensityTitle'),
+                    desc: t('settings.preferences.intensityDesc'),
+                    key: 'rigor' as const,
+                    options: [
+                      { value: 'safe', label: t('settings.preferences.intensityOptions.safe') },
+                      { value: 'balanced', label: t('settings.preferences.intensityOptions.balanced') },
+                      { value: 'paranoid', label: t('settings.preferences.intensityOptions.paranoid') },
+                    ],
+                  },
+                  {
+                    title: t('settings.preferences.validationTitle'),
+                    desc: t('settings.preferences.validationDesc'),
+                    key: 'sandboxValidation' as const,
+                    options: [
+                      { value: 'none', label: t('settings.preferences.validationOptions.none') },
+                      { value: 'standard', label: t('settings.preferences.validationOptions.standard') },
+                      { value: 'strict', label: t('settings.preferences.validationOptions.strict') },
+                    ],
+                  },
+                ].map(section => (
+                  <div key={section.key} className="card p-6 space-y-4">
                     <div>
-                      <h4 className="text-base font-semibold text-[var(--ink)]">{t('settings.guidelines.global')}</h4>
-                      <p className="text-xs text-[var(--ink-muted)]">{t('settings.guidelines.globalDesc')}</p>
+                      <h4 className="text-base font-semibold text-[var(--ink)]">{section.title}</h4>
+                      <p className="text-xs text-[var(--ink-muted)]">{section.desc}</p>
                     </div>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={handleSaveGlobalGuidelines}
-                      disabled={isSavingGlobal}
+                    <select
+                      className="input w-full text-sm"
+                      value={engineSettings[section.key]}
+                      onChange={e => {
+                        const value = e.target.value
+                        setEngineSettings(prev => prev ? { ...prev, [section.key]: value } : prev)
+                      }}
                     >
-                      {isSavingGlobal ? <Loader2 size={12} className="spin" /> : <Save size={12} />}
-                      {isSavingGlobal ? t('common.saving') : t('common.save')}
-                    </button>
+                      {section.options.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
                   </div>
-                  <textarea
-                    className="textarea font-mono text-sm min-h-[140px]"
-                    placeholder={t('settings.guidelines.placeholder')}
-                    value={globalGuidelines}
-                    onChange={e => setGlobalGuidelines(e.target.value)}
-                  />
+                ))}
+
+                <div className="card p-6 space-y-4">
+                  <div>
+                    <h4 className="text-base font-semibold text-[var(--ink)]">{t('settings.preferences.formattingTitle')}</h4>
+                    <p className="text-xs text-[var(--ink-muted)]">{t('settings.preferences.formattingDesc')}</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[var(--ink-muted)] uppercase tracking-wider mb-2">
+                        {t('settings.preferences.formattingIndent')}
+                      </label>
+                      <select
+                        className="input w-full text-sm"
+                        value={engineSettings.formatting.indent}
+                        onChange={e => setEngineSettings(prev => prev ? {
+                          ...prev,
+                          formatting: { ...prev.formatting, indent: e.target.value as FormattingPrefs['indent'] },
+                        } : prev)}
+                      >
+                        <option value="2">{t('settings.preferences.formattingIndentOptions.2')}</option>
+                        <option value="4">{t('settings.preferences.formattingIndentOptions.4')}</option>
+                        <option value="tabs">{t('settings.preferences.formattingIndentOptions.tabs')}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[var(--ink-muted)] uppercase tracking-wider mb-2">
+                        {t('settings.preferences.formattingQuotes')}
+                      </label>
+                      <select
+                        className="input w-full text-sm"
+                        value={engineSettings.formatting.quotes}
+                        onChange={e => setEngineSettings(prev => prev ? {
+                          ...prev,
+                          formatting: { ...prev.formatting, quotes: e.target.value as FormattingPrefs['quotes'] },
+                        } : prev)}
+                      >
+                        <option value="single">{t('settings.preferences.formattingQuotesOptions.single')}</option>
+                        <option value="double">{t('settings.preferences.formattingQuotesOptions.double')}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[var(--ink-muted)] uppercase tracking-wider mb-2">
+                        {t('settings.preferences.formattingSemicolons')}
+                      </label>
+                      <select
+                        className="input w-full text-sm"
+                        value={engineSettings.formatting.semicolons}
+                        onChange={e => setEngineSettings(prev => prev ? {
+                          ...prev,
+                          formatting: { ...prev.formatting, semicolons: e.target.value as FormattingPrefs['semicolons'] },
+                        } : prev)}
+                      >
+                        <option value="always">{t('settings.preferences.formattingSemicolonsOptions.always')}</option>
+                        <option value="as-needed">{t('settings.preferences.formattingSemicolonsOptions.as-needed')}</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Per project guidelines */}
-                <div className="space-y-3">
-                  <p className="section-label px-1">{t('settings.guidelines.perProject')}</p>
-
-                  {guidelinesProjects.length === 0 ? (
-                    <div className="p-8 border border-dashed border-[var(--hairline-strong)] rounded-2xl text-center text-sm text-[var(--ink-muted)] bg-[var(--surface-card)]">
-                      {t('settings.guidelines.noProjects')}
-                    </div>
-                  ) : (
-                    guidelinesProjects.map(gp => (
-                      <div key={gp.project.id} className="card p-6 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className="font-semibold text-base text-[var(--ink)]">{gp.project.name}</span>
-                            <span className="badge badge-muted flex items-center gap-1.5 lowercase">
-                              <GitBranch size={10} /> {gp.project.branch}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs text-[var(--ink-muted)]">
-                              {gp.savedAt === 'Synced' ? '' : gp.savedAt}
-                            </span>
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => handleSaveProjectGuideline(gp.project.id, gp.text)}
-                              disabled={gp.isSaving}
-                            >
-                              {gp.isSaving ? <Loader2 size={12} className="spin" /> : <Save size={12} />}
-                              {gp.isSaving ? t('common.saving') : t('common.save')}
-                            </button>
-                          </div>
-                        </div>
-
-                        <textarea
-                          className="textarea font-mono text-sm min-h-[100px]"
-                          placeholder={t('settings.guidelines.placeholder')}
-                          value={gp.text}
-                          onChange={e => {
-                            const val = e.target.value
-                            setGuidelinesProjects(prev =>
-                              prev.map(p => (p.project.id === gp.project.id ? { ...p, text: val, savedAt: 'Modified' } : p))
-                            )
-                          }}
-                        />
-                      </div>
-                    ))
+                <div className="flex items-center gap-3">
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => void handleSaveEngineSettings()}
+                    disabled={isSavingEngine}
+                  >
+                    {isSavingEngine ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
+                    {isSavingEngine ? t('common.saving') : t('settings.engine.saveBtn')}
+                  </button>
+                  {engineSaved && (
+                    <span className="text-xs text-[var(--semantic-success)] flex items-center gap-1">
+                      <Check size={12} /> {t('settings.engine.saved')}
+                    </span>
                   )}
                 </div>
               </>
             )}
+          </div>
+        )
+
+      case 'guidelines':
+        return (
+          <div className="page-enter">
+            <GuidelinesEditor />
           </div>
         )
 
@@ -678,6 +716,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
             {/* Other integrations grid */}
             <div>
               <p className="section-label mb-3 px-1">{t('settings.integrations.otherPlatforms')}</p>
+              <p className="text-xs text-[var(--ink-muted)] mb-4 px-1">{t('settings.integrations.roadmapHint')}</p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   {
@@ -696,20 +735,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                     desc: t('settings.integrations.discordDesc'),
                   },
                 ].map(item => (
-                  <div key={item.id} className="card p-5 flex flex-col justify-between min-h-[160px] opacity-75">
+                  <div key={item.id} className="card p-5 flex flex-col justify-between min-h-[160px]">
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-semibold text-sm text-[var(--ink)]">{item.title}</span>
-                        <span className="badge badge-muted text-[10px] scale-90">{t('common.comingSoon')}</span>
+                        <span className="badge badge-muted text-[10px] scale-90">{t('settings.integrations.roadmapBadge')}</span>
                       </div>
                       <p className="text-xs text-[var(--ink-muted)] leading-relaxed">{item.desc}</p>
                     </div>
 
                     <button
                       className="btn btn-secondary btn-sm mt-4 w-full"
-                      onClick={() => toastInfo(t('common.comingSoon'))}
+                      onClick={() => window.open('mailto:refractcode@gmail.com?subject=Integration%20early%20access', '_blank')}
                     >
-                      {t('common.comingSoon')}
+                      {t('settings.integrations.notifyBtn')}
                     </button>
                   </div>
                 ))}
@@ -731,6 +770,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                   <p className="text-sm text-[var(--ink-muted)]">{t('settings.team.subtitle')}</p>
                 </div>
               </div>
+            </div>
+
+            <div className="card p-4 border border-[var(--hairline)] bg-[var(--canvas-soft)]">
+              <p className="text-sm text-[var(--ink)] font-medium">{t('settings.team.roadmapBadge')}</p>
+              <p className="text-xs text-[var(--ink-muted)] mt-1">{t('settings.team.roadmapHint')}</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -766,24 +810,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
                   desc: t('settings.team.reviewDesc'),
                 },
               ].map(item => (
-                <div key={item.id} className="card p-5 flex flex-col justify-between min-h-[160px] opacity-75">
+                <div key={item.id} className="card p-5 flex flex-col justify-between min-h-[160px]">
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <item.icon size={16} className="text-[var(--ink-muted)] shrink-0" />
                         <span className="font-semibold text-sm text-[var(--ink)]">{item.title}</span>
                       </div>
-                      <span className="badge badge-muted text-[10px] scale-90">{t('common.comingSoon')}</span>
+                      <span className="badge badge-muted text-[10px] scale-90">{t('settings.team.roadmapBadge')}</span>
                     </div>
                     <p className="text-xs text-[var(--ink-muted)] leading-relaxed">{item.desc}</p>
                   </div>
-
-                  <button
-                    className="btn btn-secondary btn-sm mt-4 w-full"
-                    onClick={() => toastInfo(t('common.comingSoon'))}
-                  >
-                    {t('common.comingSoon')}
-                  </button>
                 </div>
               ))}
             </div>
@@ -805,10 +842,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ activeTab, onTabChan
               </div>
             </div>
 
-            <div className="card p-6 space-y-5 opacity-75">
+            <div className="card p-4 border border-[var(--hairline)] bg-[var(--canvas-soft)]">
+              <p className="text-sm text-[var(--ink)] font-medium">{t('settings.invite.roadmapBadge')}</p>
+              <p className="text-xs text-[var(--ink-muted)] mt-1">{t('settings.invite.roadmapHint')}</p>
+            </div>
+
+            <div className="card p-6 space-y-5">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-sm text-[var(--ink)]">{t('settings.invite.linkLabel')}</span>
-                <span className="badge badge-muted text-[10px] scale-90">{t('common.comingSoon')}</span>
+                <span className="badge badge-muted text-[10px] scale-90">{t('settings.invite.roadmapBadge')}</span>
               </div>
 
               <div className="flex gap-2">

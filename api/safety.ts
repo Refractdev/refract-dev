@@ -32,10 +32,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   }
 
-  const { filePath, before, after, newFiles, fileMap } = req.body ?? {}
+  const { filePath, before, after, newFiles, fileMap, sandboxValidation } = req.body ?? {}
 
   if (!filePath || before === undefined || after === undefined) {
     return res.status(400).json({ error: 'Missing required parameters (filePath, before, after)' })
+  }
+
+  const validationMode = sandboxValidation === 'none' || sandboxValidation === 'strict'
+    ? sandboxValidation
+    : 'standard'
+
+  if (validationMode === 'none') {
+    return res.status(200).json({
+      passed: true,
+      syntaxOk: true,
+      typecheck: true,
+      buildOk: undefined,
+      testsOk: undefined,
+      errors: [],
+      warnings: ['Sandbox verification disabled — syntax/type checks skipped.'],
+      details: {
+        typecheckLogs: ['Validation skipped (none).'],
+      },
+    })
   }
 
   // ─── In-memory TypeScript validation ────────────────────────────────────────
@@ -112,14 +131,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
 
     const passed = typecheckErrors.length === 0
+    const strictWarnings = validationMode === 'strict'
+      ? ['Strict mode enabled — build and test suite checks are not available in virtual mode yet.']
+      : []
     return res.status(200).json({
       passed,
       syntaxOk: true,
       typecheck: passed,
-      buildOk: undefined,
-      testsOk: undefined,
+      buildOk: validationMode === 'strict' ? undefined : undefined,
+      testsOk: validationMode === 'strict' ? undefined : undefined,
       errors: typecheckErrors,
-      warnings: ['Running in virtual emulation mode. Build and unit tests are skipped.'],
+      warnings: [
+        'Running in virtual emulation mode. Build and unit tests are skipped.',
+        ...strictWarnings,
+      ],
       details: {
         typecheckLogs: typecheckErrors.length > 0 ? typecheckErrors : ['No type errors found.'],
       },

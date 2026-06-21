@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { runAIChat, AIRateLimitError } from './_lib/ai'
+import { runAIChat, AIRateLimitError, type ChatOptions } from './_lib/ai'
 import { getAuthenticatedUserWithOptionalGitHub } from './_lib/auth'
 import { checkRateLimit, applyRateLimitHeaders } from './_lib/ratelimit'
 
@@ -45,6 +45,14 @@ Antworte immer auf Deutsch. Direkt, ohne Floskeln.`,
 
 // ─── Action handlers ──────────────────────────────────────────────────────────
 
+function parseEngineModel(body: Record<string, unknown> | undefined): ChatOptions['engineModel'] | undefined {
+  const value = body?.engineModel
+  if (value === 'flash' || value === 'pro' || value === 'ultra' || value === 'hybrid') {
+    return value
+  }
+  return undefined
+}
+
 async function handleBriefing(req: VercelRequest, res: VercelResponse) {
   const { projectPath, issues, scannedFiles, guidelines, language } = req.body
 
@@ -81,6 +89,7 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.2,
+      engineModel: parseEngineModel(req.body),
     })
 
     return res.status(200).json({ briefing })
@@ -130,6 +139,7 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.2,
+      engineModel: parseEngineModel(req.body),
     })
 
     return res.status(200).json({ explanation })

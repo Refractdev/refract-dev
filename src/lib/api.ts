@@ -87,7 +87,13 @@ async function readResponse<T>(response: Response, fallbackMessage: string): Pro
 
 // ─── AI API Proxy ─────────────────────────────────────────────────────────────
 
-export async function explainIssue(issue: AnalysisIssue, fileSource: string, guidelines?: string, signal?: AbortSignal): Promise<string> {
+export async function explainIssue(
+  issue: AnalysisIssue,
+  fileSource: string,
+  guidelines?: string,
+  signal?: AbortSignal,
+  engineModel?: string,
+): Promise<string> {
   const accessToken = await getAccessToken()
 
   const response = await fetch('/api/ai?action=explain', {
@@ -96,7 +102,7 @@ export async function explainIssue(issue: AnalysisIssue, fileSource: string, gui
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ issue, fileSource, guidelines }),
+    body: JSON.stringify({ issue, fileSource, guidelines, engineModel }),
     signal,
   })
 
@@ -129,7 +135,8 @@ export async function generateBriefing(
   issues: AnalysisIssue[],
   scannedFiles: string[],
   guidelines?: string,
-  language?: string
+  language?: string,
+  engineModel?: string,
 ): Promise<string> {
   const accessToken = await getAccessToken()
 
@@ -139,7 +146,7 @@ export async function generateBriefing(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ projectPath, issues, scannedFiles, guidelines, language }),
+    body: JSON.stringify({ projectPath, issues, scannedFiles, guidelines, language, engineModel }),
   })
 
   const data = await readResponse<{ briefing: string }>(response, 'Failed to generate briefing')
@@ -325,6 +332,7 @@ export interface ValidateProposalInput {
   newFiles?: Array<{ path: string; content: string }>
   fileMap?: Record<string, string>
   engineResult?: SafetyResult
+  sandboxValidation?: 'none' | 'standard' | 'strict'
 }
 
 export async function validateProposalSafety(input: ValidateProposalInput): Promise<SafetyResult> {

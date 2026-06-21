@@ -35,6 +35,7 @@ export const dictionary = {
       tabs: {
         profile: 'Profile',
         preferences: 'Preferences',
+        engine: 'Engine',
         guidelines: 'Analysis Rules',
         integrations: 'Integrations',
         team: 'Team',
@@ -115,9 +116,15 @@ export const dictionary = {
         },
         formattingSemicolons: 'Semicolons',
         formattingSemicolonsOptions: {
-          'true': 'Always insert',
-          'false': 'Omit semicolons',
+          always: 'Always insert',
+          'as-needed': 'Omit semicolons',
         },
+      },
+      engine: {
+        title: 'Refactor Engine',
+        subtitle: 'Control how analysis, validation, and generated code behave across projects.',
+        saveBtn: 'Save engine settings',
+        saved: 'Saved',
       },
       guidelines: {
         title: 'Analysis Guidelines',
@@ -148,6 +155,9 @@ export const dictionary = {
         slackDesc: 'Send weekly code drift reports directly to Slack channels.',
         discordTitle: 'Discord Bot',
         discordDesc: 'Receive alerts for health score changes.',
+        roadmapBadge: 'Team plan',
+        roadmapHint: 'On the roadmap for Team tier. Email us if you want early access.',
+        notifyBtn: 'Request early access',
       },
       team: {
         title: 'Team workspace',
@@ -162,6 +172,8 @@ export const dictionary = {
         cicdDesc: 'Run Refract on every pull request and block merges below your quality threshold.',
         reviewTitle: 'Collaborative review queue',
         reviewDesc: 'Share a collaborative queue to assign, discuss, and approve suggestions.',
+        roadmapBadge: 'Team plan',
+        roadmapHint: 'Collaboration features ship with the Team tier — members, shared guidelines, and org-wide drift dashboards.',
       },
       invite: {
         title: 'Invite & earn',
@@ -176,6 +188,8 @@ export const dictionary = {
         step1: 'Share your invite link with a developer or teammate.',
         step2: 'They sign up and connect their first repository.',
         step3: 'When they run their first analysis, both of you earn bonus AI credits.',
+        roadmapBadge: 'Coming soon',
+        roadmapHint: 'Referral credits are planned — share feedback if this matters for your workflow.',
       },
       danger: {
         title: 'Danger Zone',
@@ -435,6 +449,7 @@ export const dictionary = {
       tabs: {
         profile: 'Perfil',
         preferences: 'Preferências',
+        engine: 'Motor',
         guidelines: 'Regras de Análise',
         integrations: 'Integrações',
         team: 'Equipa',
@@ -515,9 +530,15 @@ export const dictionary = {
         },
         formattingSemicolons: 'Pontos e vírgula',
         formattingSemicolonsOptions: {
-          'true': 'Inserir sempre',
-          'false': 'Omitir pontos e vírgula',
+          always: 'Inserir sempre',
+          'as-needed': 'Omitir pontos e vírgula',
         },
+      },
+      engine: {
+        title: 'Motor de Refatoração',
+        subtitle: 'Controle análise, validação e estilo do código gerado em todos os projetos.',
+        saveBtn: 'Guardar definições do motor',
+        saved: 'Guardado',
       },
       guidelines: {
         title: 'Diretrizes de Análise',
@@ -836,6 +857,7 @@ export const dictionary = {
       tabs: {
         profile: 'Perfil',
         preferences: 'Preferencias',
+        engine: 'Motor',
         guidelines: 'Reglas de análisis',
         integrations: 'Integraciones',
         team: 'Equipo',
@@ -916,9 +938,15 @@ export const dictionary = {
         },
         formattingSemicolons: 'Puntos y coma',
         formattingSemicolonsOptions: {
-          'true': 'Insertar siempre',
-          'false': 'Omitir puntos y coma',
+          always: 'Insertar siempre',
+          'as-needed': 'Omitir puntos y coma',
         },
+      },
+      engine: {
+        title: 'Motor de refactorización',
+        subtitle: 'Controla el análisis, la validación y el estilo del código generado.',
+        saveBtn: 'Guardar ajustes del motor',
+        saved: 'Guardado',
       },
       guidelines: {
         title: 'Directrices de análisis',
@@ -1236,6 +1264,7 @@ export const dictionary = {
       tabs: {
         profile: 'Profil',
         preferences: 'Préférences',
+        engine: 'Moteur',
         guidelines: 'Règles d\'analyse',
         integrations: 'Intégrations',
         team: 'Équipe',
@@ -1316,9 +1345,15 @@ export const dictionary = {
         },
         formattingSemicolons: 'Points-virgules',
         formattingSemicolonsOptions: {
-          'true': 'Toujours insérer',
-          'false': 'Omettre les points-virgules',
+          always: 'Toujours insérer',
+          'as-needed': 'Omettre les points-virgules',
         },
+      },
+      engine: {
+        title: 'Moteur de refactoring',
+        subtitle: 'Contrôlez l\'analyse, la validation et le style du code généré.',
+        saveBtn: 'Enregistrer les paramètres du moteur',
+        saved: 'Enregistré',
       },
       guidelines: {
         title: 'Directives d\'analyse',
@@ -1636,6 +1671,7 @@ export const dictionary = {
       tabs: {
         profile: 'Profil',
         preferences: 'Präferenzen',
+        engine: 'Engine',
         guidelines: 'Analyseregeln',
         integrations: 'Integrationen',
         team: 'Team',
@@ -1716,9 +1752,15 @@ export const dictionary = {
         },
         formattingSemicolons: 'Semikolons',
         formattingSemicolonsOptions: {
-          'true': 'Immer einfügen',
-          'false': 'Semikolons weglassen',
+          always: 'Immer einfügen',
+          'as-needed': 'Semikolons weglassen',
         },
+      },
+      engine: {
+        title: 'Refactoring-Engine',
+        subtitle: 'Steuern Sie Analyse, Validierung und generierten Codestil.',
+        saveBtn: 'Engine-Einstellungen speichern',
+        saved: 'Gespeichert',
       },
       guidelines: {
         title: 'Analyserichtlinien',
