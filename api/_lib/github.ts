@@ -17,8 +17,8 @@ export async function githubRequest(
   })
 
   if (!response.ok) {
-    const errorPayload = await response.json().catch(() => ({}))
-    throw new Error(errorPayload.message ?? `GitHub request failed (${response.status})`)
+    const errorPayload = await response.json().catch(() => null) as { message?: string } | null
+    throw new Error(errorPayload?.message ?? `GitHub request failed (${response.status})`)
   }
 
   return response.json()

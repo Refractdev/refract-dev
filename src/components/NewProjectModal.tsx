@@ -7,6 +7,7 @@ import { useAuth } from '../lib/AuthContext';
 import { trackEvent } from '../lib/analytics';
 import { RateLimitError, cloneGitHubRepo } from '../lib/api';
 import { createProject } from '../lib/db';
+import { canonicalizeEntries } from '../engine/path';
 import type { Project } from '../shared/types';
 
 interface Props {
@@ -86,7 +87,10 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
       const repoName = getRepoNameFromUrl(url);
 
       const cloneResult = await cloneGitHubRepo(url, branch);
-      const fileMap = new Map(Object.entries(cloneResult.files));
+      const { map: fileMap, collisions } = canonicalizeEntries(Object.entries(cloneResult.files));
+      if (collisions.length > 0) {
+        console.warn('[NewProjectModal] Collapsed duplicate canonical paths from clone:', collisions);
+      }
 
       let project: Project;
 
@@ -156,9 +160,17 @@ export const NewProjectModal: React.FC<Props> = ({ onClose, onProjectCreated, on
           <button
             type="button"
             className="card flex flex-col items-center justify-center p-6 text-center cursor-pointer border border-[var(--hairline)] gap-3 hover:border-[var(--ink)] hover:-translate-y-0.5 transition-all duration-200"
-            onClick={() => {
-              if (hasGitHubConnection) onNavigate?.('repos');
-              else connectGitHub('/repos');
+            onClick={async () => {
+              if (hasGitHubConnection) {
+                onNavigate?.('repos');
+                onClose();
+                return;
+              }
+              const { error: connectError } = await connectGitHub('/repos');
+              if (connectError) {
+                setError(connectError.message);
+                return;
+              }
               onClose();
             }}
           >

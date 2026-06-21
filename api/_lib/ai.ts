@@ -27,6 +27,35 @@ export interface ChatOptions {
   max_tokens?: number
   temperature?: number
   messages: ChatMessage[]
+  engineModel?: 'flash' | 'pro' | 'ultra' | 'hybrid'
+}
+
+/** Thrown when Groq keeps returning 429 after exhausting retries. */
+export class AIRateLimitError extends Error {
+  retryAfterSeconds: number
+  constructor(message: string, retryAfterSeconds: number) {
+    super(message)
+    this.name = 'AIRateLimitError'
+    this.retryAfterSeconds = retryAfterSeconds
+  }
+}
+
+const MAX_RETRIES = 3
+
+function parseRetryAfter(err: any): number | null {
+  const header = err?.headers?.['retry-after']
+  if (header) {
+    const seconds = Number(header)
+    if (Number.isFinite(seconds)) return seconds
+  }
+  // Groq also embeds "try again in 8.32s" in the message.
+  const msg: string = err?.error?.error?.message ?? err?.message ?? ''
+  const match = msg.match(/try again in ([\d.]+)s/i)
+  if (match) {
+    const seconds = Number(match[1])
+    if (Number.isFinite(seconds)) return seconds
+  }
+  return null
 }
 
 const GROQ_FAST = 'llama-3.1-8b-instant'
@@ -74,6 +103,32 @@ export function resolveRoute(action: AIAction): RouteStep[] {
   return MODEL_ROUTES[action]
 }
 
+export function resolveRouteForModel(
+  action: AIAction,
+  engineModel?: ChatOptions['engineModel'],
+): RouteStep[] {
+  if (!engineModel || engineModel === 'hybrid') {
+    return resolveRoute(action)
+  }
+
+  const coderRoute = MODEL_ROUTES['arch-rewrite']
+  const heavyRoute: RouteStep[] = [
+    { provider: 'groq', model: GROQ_HEAVY },
+    ...resolveRoute(action).filter(step => step.provider === 'openrouter').slice(0, 1),
+  ]
+
+  switch (engineModel) {
+    case 'flash':
+      return [{ provider: 'groq', model: GROQ_FAST }]
+    case 'pro':
+      return heavyRoute
+    case 'ultra':
+      return coderRoute.length > 0 ? coderRoute : heavyRoute
+    default:
+      return resolveRoute(action)
+  }
+}
+
 const RETRY_DELAYS_MS = [1000, 2000]
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
@@ -92,14 +147,38 @@ async function callGroq(model: string, options: ChatOptions): Promise<string> {
   }
 
   const groq = new Groq({ apiKey: groqKey })
-  const msg = await groq.chat.completions.create({
-    model,
-    max_tokens: options.max_tokens ?? 512,
-    messages: options.messages,
-    temperature: options.temperature ?? 0.2,
-  })
+  let lastError: any = null
 
-  return msg.choices[0]?.message?.content ?? ''
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const msg = await groq.chat.completions.create({
+        model: model,
+        max_tokens: options.max_tokens ?? 512,
+        messages: options.messages,
+        temperature: options.temperature ?? 0.2,
+      })
+      return msg.choices[0]?.message?.content ?? ''
+    } catch (err: any) {
+      lastError = err
+      if (err?.status !== 429 || attempt === MAX_RETRIES) break
+
+      const retryAfter = parseRetryAfter(err)
+      const backoffMs = retryAfter != null
+        ? Math.min(retryAfter * 1000, 15_000)
+        : Math.min(1000 * 2 ** attempt, 8_000)
+      console.warn(`[ai] Groq 429 — retrying in ${Math.round(backoffMs / 100) / 10}s (attempt ${attempt + 1}/${MAX_RETRIES})`)
+      await sleep(backoffMs)
+    }
+  }
+
+  if (lastError?.status === 429) {
+    const retryAfter = parseRetryAfter(lastError) ?? 10
+    throw new AIRateLimitError(
+      'AI rate limit reached. Please wait a moment and try again.',
+      retryAfter,
+    )
+  }
+  throw lastError
 }
 
 async function callOpenRouter(model: string, options: ChatOptions): Promise<string> {
@@ -182,7 +261,7 @@ async function callWithRetries(step: RouteStep, options: ChatOptions): Promise<s
 }
 
 export async function runAIChat(options: ChatOptions): Promise<string> {
-  const route = resolveRoute(options.action)
+  const route = resolveRouteForModel(options.action, options.engineModel)
   const errors: string[] = []
 
   for (const step of route) {

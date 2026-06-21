@@ -11,11 +11,14 @@ import { LogoMark } from '../../components/Logo'
 import type { Phase, Decision, CompletionSource, ArchApplyStats } from './types'
 import { ProjectViewStepper } from './ProjectViewStepper'
 import { getProject, saveDecision, getDecisionHistory, getSetting, persistProjectHealth } from '../../lib/db'
+import { loadEngineSettings, type EngineSettings } from '../../lib/engineSettings'
 import { explainIssue, explainCode, generateBriefing, RateLimitError, cloneGitHubRepo, validateProposalSafety, createGitHubPullRequest } from '../../lib/api'
 import { useFiles } from '../../context/FilesContext'
 import { trackEvent } from '../../lib/analytics'
 import type { TransformProposal, SafetyResult } from '../../engine/types'
 import { generateReport } from '../../lib/report'
+import { applyAcceptedPatches } from '../../lib/applyIssuePatch'
+import { canonicalizeEntries, canonicalizePath, normalizePath } from '../../engine/path'
 import { CodeMap } from './CodeMap'
 import { useTranslation } from '../../hooks/useTranslation'
 import { UnifiedDiffView } from '../../components/UnifiedDiffView'
@@ -104,13 +107,19 @@ const SideBySideDiff: React.FC<{
 }> = ({ issue, loading }) => {
   const { t } = useTranslation()
   const beforeLines = issue.lines.before || []
-  const afterLines = issue.lines.after || []
+  const patchAfter = issue.patch?.after
+  const afterLines = (issue.lines.after && issue.lines.after.length > 0)
+    ? issue.lines.after
+    : (patchAfter ? patchAfter.split('\n') : [])
+
   const afterIsCommentOnly = afterLines.length > 0 && afterLines.join('\n').trim().split('\n').every(l => l.trim().startsWith('//') || l.trim() === '')
-  const hasMeaningfulPatch = !!issue.patch?.after && issue.patch.after.trim() !== '' && !issue.patch.after.trim().split('\n').every(l => l.trim().startsWith('//') || l.trim() === '')
-  const isAdvisory = !hasMeaningfulPatch && (afterLines.length === 0 || afterIsCommentOnly || !!issue.suggestion)
+  const hasMeaningfulPatch = !!patchAfter && patchAfter.trim() !== '' && !patchAfter.trim().split('\n').every(l => l.trim().startsWith('//') || l.trim() === '')
+  const isDeletion = afterLines.length === 0 && (beforeLines.length > 0 || patchAfter === '')
+  const isAdvisory = !hasMeaningfulPatch && !isDeletion && (afterLines.length === 0 || afterIsCommentOnly || !!issue.suggestion)
   const advisoryText = issue.suggestion
     || (afterIsCommentOnly ? afterLines.join('\n').replace(/^\/\/\s?/gm, '').trim() : '')
     || t('projectView.noDeterministicFix')
+  const displayAfterLines = hasMeaningfulPatch ? patchAfter!.split('\n') : afterLines
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', minHeight: 0 }}>
@@ -142,7 +151,7 @@ const SideBySideDiff: React.FC<{
           ))}
         </div>
 
-        {/* Right Column (After or Advisory) */}
+        {/* Right Column (After, Deletion, or Advisory) */}
         {isAdvisory ? (
           <div style={{ background: 'color-mix(in srgb, var(--semantic-warning) 6%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px', overflowY: 'auto', fontSize: 13, lineHeight: 1.7, color: 'var(--muted-foreground)' }}>
             {loading ? (
@@ -152,15 +161,26 @@ const SideBySideDiff: React.FC<{
             )}
           </div>
         ) : (
-          <div style={{ background: 'color-mix(in srgb, var(--semantic-success) 4%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, position: 'relative' }}>
-            {(hasMeaningfulPatch ? issue.patch!.after.split('\n') : afterLines).map((line, idx) => (
+          <div style={{ background: 'color-mix(in srgb, var(--semantic-success) 4%, transparent)', border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px', overflowX: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6, position: 'relative', display: (loading || isDeletion) ? 'flex' : 'block', alignItems: 'center', justifyContent: 'center' }}>
+            {loading ? (
+              <span style={{ color: C.muted, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Loader2 size={14} className="animate-spin" />
+                {t('projectView.refactored')}…
+              </span>
+            ) : isDeletion ? (
+              <span style={{ color: C.muted, fontSize: 12, fontStyle: 'italic', textAlign: 'center' }}>
+                {t('projectView.diffLineRemoved')}
+              </span>
+            ) : (
+              displayAfterLines.map((line, idx) => (
               <div key={idx} style={{ display: 'flex', gap: 12, padding: '2px 4px', borderRadius: 4, background: 'color-mix(in srgb, var(--semantic-success) 6%, transparent)', marginBottom: 2 }}>
                 <span style={{ color: 'color-mix(in srgb, var(--semantic-success) 50%, transparent)', userSelect: 'none', width: 24, textAlign: 'right', fontSize: 10, paddingTop: 2 }}>
                   {idx + 1}
                 </span>
                 <pre style={{ margin: 0, color: 'var(--semantic-success)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</pre>
               </div>
-            ))}
+            ))
+            )}
           </div>
         )}
       </div>
@@ -168,14 +188,20 @@ const SideBySideDiff: React.FC<{
   )
 }
 
-const normalizeProjectPath = (path: string) => path.replace(/\\/g, '/').replace(/^\/+/, '')
+const canonicalizeProjectEntries = (entries: Iterable<[string, string]>, label: string) => {
+  const { map, collisions } = canonicalizeEntries(entries)
+  if (collisions.length > 0) {
+    console.warn(`[ProjectView] Collapsed duplicate canonical paths from ${label}:`, collisions)
+  }
+  return map
+}
 
 const getFileContentForIssue = (filePath: string, fileMap: Map<string, string>) => {
-  const normalizedFilePath = normalizeProjectPath(filePath)
+  const normalizedFilePath = normalizePath(filePath)
 
   for (const [key, value] of fileMap.entries()) {
-    const normalizedKey = normalizeProjectPath(key)
-    if (normalizedKey === normalizedFilePath || normalizedKey.endsWith(`/${normalizedFilePath}`)) {
+    const normalizedKey = normalizePath(key)
+    if (normalizedKey === normalizedFilePath) {
       return { filePath: normalizedKey, content: value }
     }
   }
@@ -826,7 +852,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setRecloneError(null)
     try {
       const result = await cloneGitHubRepo(project.repo, project.branch ?? 'main')
-      setFileMap(new Map(Object.entries(result.files)))
+      setFileMap(canonicalizeProjectEntries(Object.entries(result.files), 're-clone'))
     } catch (err) {
       console.error('Failed to re-clone repository:', err)
       setRecloneError(err instanceof Error ? err.message : 'Failed to re-clone repository.')
@@ -860,6 +886,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [fileExplanation, setFileExplanation] = useState<string | null>(null)
   const [loadingFileExplanation, setLoadingFileExplanation] = useState(false)
   const [explanationCache, setExplanationCache] = useState<Record<string, string>>({})
+  // Tracks the issue id whose explanation request is currently in flight, so we
+  // don't fire duplicate Groq calls (e.g. StrictMode double-invoke or rapid nav).
+  const explainInFlightRef = useRef<string | null>(null)
+  const explainAbortRef = useRef<AbortController | null>(null)
   const [decisionHistory, setDecisionHistory] = useState<Record<string, { decision: string; created_at: string }>>({})
   const [currentSig, setCurrentSig] = useState<string | null>(null)
   const [loadingRefactor, setLoadingRefactor] = useState(false)
@@ -867,6 +897,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
   const [refactorProposals, setRefactorProposals] = useState<TransformProposal[]>([])
   const [requestError, setRequestError] = useState<string | null>(null)
   const [combinedGuidelines, setCombinedGuidelines] = useState('')
+  const [engineSettings, setEngineSettings] = useState<EngineSettings | null>(null)
   const [activeTab, setActiveTab] = useState<'issues' | 'map'>('issues')
   const [creatingPR, setCreatingPR] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
@@ -998,31 +1029,45 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       return
     }
 
-    setIssueExplanation(null)
-    setLoadingExplanation(true)
     const issueId = currentIssue.id
     const issueProblem = currentIssue.problem
+
+    if (explainInFlightRef.current === issueId) return
+    explainInFlightRef.current = issueId
+
+    explainAbortRef.current?.abort()
+    const controller = new AbortController()
+    explainAbortRef.current = controller
+
+    setIssueExplanation(null)
+    setLoadingExplanation(true)
 
     try {
       const fileContent = getFileContentForIssue(currentIssue.filePath, fileMap)
       const fileSource = fileContent ? fileContent.content : ''
-      const explanation = await explainIssue(currentIssue, fileSource, combinedGuidelines)
+      const explanation = await explainIssue(currentIssue, fileSource, combinedGuidelines, controller.signal, engineSettings?.model)
+      if (controller.signal.aborted) return
       setRequestError(null)
       setIssueExplanation(explanation)
       setExplanationCache(prev => ({ ...prev, [issueId]: explanation }))
     } catch (err) {
+      if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return
       console.error('Failed to explain issue:', err)
       if (err instanceof RateLimitError) {
         setRequestError(err instanceof Error ? err.message : 'Rate limit exceeded')
       }
       setIssueExplanation(issueProblem)
     } finally {
-      setLoadingExplanation(false)
+      if (explainInFlightRef.current === issueId) explainInFlightRef.current = null
+      if (!controller.signal.aborted) {
+        setLoadingExplanation(false)
+      }
     }
   }
 
   useEffect(() => {
     if (!currentIssue) return
+    explainAbortRef.current?.abort()
     if (explanationCache[currentIssue.id]) {
       setIssueExplanation(explanationCache[currentIssue.id])
     } else {
@@ -1057,9 +1102,15 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         }
       })()
 
+      const enginePromise = loadEngineSettings().catch(err => {
+        console.error('Failed to load engine settings', err)
+        return null
+      })
+
       await Promise.all([
         loadFilesForProject(projectId),
         guidelinesPromise.then(setCombinedGuidelines),
+        enginePromise.then(setEngineSettings),
       ])
 
       if (projectId.startsWith('local-')) {
@@ -1124,7 +1175,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setRecloneError(null)
     cloneGitHubRepo(project.repo, project.branch ?? 'main')
       .then((cloneResult) => {
-        setFileMap(new Map(Object.entries(cloneResult.files)))
+        setFileMap(canonicalizeProjectEntries(Object.entries(cloneResult.files), 'auto-clone'))
       })
       .catch((err) => {
         console.error('[ProjectView] Auto-clone failed:', err)
@@ -1253,12 +1304,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
 
   const applyProposalToMap = (baseMap: Map<string, string>, proposal: TransformProposal) => {
     const nextMap = new Map(baseMap)
-    if (proposal.movedTo) nextMap.delete(proposal.filePath)
-    nextMap.set(proposal.movedTo ?? proposal.filePath, proposal.after)
+    if (proposal.movedTo) nextMap.delete(normalizePath(proposal.filePath))
+    nextMap.set(normalizePath(proposal.movedTo ?? proposal.filePath), proposal.after)
     for (const file of proposal.newFiles ?? []) {
-      nextMap.set(file.path, file.content)
+      nextMap.set(normalizePath(file.path), file.content)
     }
-    return nextMap
+    return canonicalizeProjectEntries(nextMap.entries(), 'proposal-apply')
   }
 
   const batchApply = (baseMap: Map<string, string>, proposals: TransformProposal[]) => {
@@ -1266,7 +1317,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     const byTarget = new Map<string, TransformProposal[]>()
 
     for (const p of proposals) {
-      const target = p.movedTo ?? p.filePath
+      const target = normalizePath(p.movedTo ?? p.filePath)
       const group = byTarget.get(target) ?? []
       group.push(p)
       byTarget.set(target, group)
@@ -1275,22 +1326,22 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     for (const [, group] of byTarget) {
       if (group.length === 1) {
         const p = group[0]
-        if (p.movedTo) nextMap.delete(p.filePath)
-        nextMap.set(p.movedTo ?? p.filePath, p.after)
-        for (const f of p.newFiles ?? []) nextMap.set(f.path, f.content)
+        if (p.movedTo) nextMap.delete(normalizePath(p.filePath))
+        nextMap.set(normalizePath(p.movedTo ?? p.filePath), p.after)
+        for (const f of p.newFiles ?? []) nextMap.set(normalizePath(f.path), f.content)
       } else {
         const [winner, ...rest] = group
         console.warn(
           `batchApply: conflito em "${winner.movedTo ?? winner.filePath}" — ${rest.length} proposta(s) ignorada(s)`,
           rest.map(p => p.id),
         )
-        if (winner.movedTo) nextMap.delete(winner.filePath)
-        nextMap.set(winner.movedTo ?? winner.filePath, winner.after)
-        for (const f of winner.newFiles ?? []) nextMap.set(f.path, f.content)
+        if (winner.movedTo) nextMap.delete(normalizePath(winner.filePath))
+        nextMap.set(normalizePath(winner.movedTo ?? winner.filePath), winner.after)
+        for (const f of winner.newFiles ?? []) nextMap.set(normalizePath(f.path), f.content)
       }
     }
 
-    return nextMap
+    return canonicalizeProjectEntries(nextMap.entries(), 'batch-apply')
   }
 
   const handleAcceptAll = () => {
@@ -1303,11 +1354,16 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     }
     setDecisions(all)
 
-    // 2) Feedback imediato ao utilizador
+    // 2) Aplicar os patches estáticos dos detetores (AST) ao fileMap.
+    // setFileMap é assíncrono, por isso passamos o mapa já corrigido ao motor.
+    const patched = applyAcceptedPatches(fileMap, allIssues, all)
+    setFileMap(patched)
+
+    // 3) Feedback imediato ao utilizador
     setPhase('applying')
     setLoadingRefactor(true)
 
-    // 3) Persistência em background (não bloqueia UI)
+    // 4) Persistência em background (não bloqueia UI)
     void Promise.allSettled(
       allIssues.map(async (i) => {
         try {
@@ -1319,22 +1375,59 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
       })
     )
 
-    // 4) Iniciar engine imediatamente
-    runRefactorEngine(true)
+    // 5) Iniciar engine sobre o mapa já corrigido
+    runRefactorEngine(true, patched)
   }
 
-  const runRefactorEngine = async (autoApplyAll = false) => {
+  // Re-run the AST analysis on an already-patched file map so the monitor,
+  // health score and remaining issue count reflect the fixes just applied.
+  // Unlike runAnalysis, this does NOT reset decisions or re-enter review.
+  const recomputeAfterApply = async (map: Map<string, string>) => {
+    const worker = workerRef.current
+    if (!worker) {
+      setLoadingRefactor(false)
+      setPhase('complete')
+      return
+    }
+
+    const serialized: Record<string, string> = {}
+    for (const [key, value] of map.entries()) {
+      serialized[key] = value
+    }
+
+    worker.onmessage = async (e: MessageEvent) => {
+      const { type } = e.data
+      if (type === 'progress') return
+      if (type === 'success') {
+        const analysisResult: AnalysisResult = e.data.result
+        setResult(analysisResult)
+        await persistProjectAnalysis(analysisResult)
+      } else if (type === 'error') {
+        console.error('[recompute] analysis failed', e.data.error)
+      }
+      setLoadingRefactor(false)
+      setPhase('complete')
+    }
+
+    worker.postMessage({ files: serialized })
+  }
+
+  const runRefactorEngine = async (autoApplyAll = false, baseMap: Map<string, string> = fileMap) => {
     if (!refactorWorkerRef.current) {
       setLoadingRefactor(false)
       setLoadingRefactorEngine(false)
-      setPhase('complete')
+      if (autoApplyAll) {
+        void recomputeAfterApply(baseMap)
+      } else {
+        setPhase('complete')
+      }
       return
     }
     setLoadingRefactorEngine(true)
     setRequestError(null)
 
     const serialized: Record<string, string> = {}
-    for (const [key, value] of fileMap.entries()) {
+    for (const [key, value] of baseMap.entries()) {
       serialized[key] = value
     }
 
@@ -1353,9 +1446,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           const safeProposals = proposals.filter((p) => SAFE_FOR_BULK.includes(p.type))
           const reviewProposals = proposals.filter((p) => !SAFE_FOR_BULK.includes(p.type))
 
+          // Start from the patched base map (detector fixes already applied).
+          let finalMap = baseMap
           if (safeProposals.length > 0) {
-            const nextMap = batchApply(fileMap, safeProposals)
-            setFileMap(nextMap)
+            finalMap = batchApply(baseMap, safeProposals)
+            setFileMap(finalMap)
             void trackEvent('refract_applied', {
               project_id: project?.id,
               changes_count: safeProposals.length,
@@ -1373,17 +1468,17 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
           }
 
           if (reviewProposals.length > 0) {
-            // Present risky proposals for manual review instead of auto-applying
+            // Present risky proposals for manual review instead of auto-applying.
+            // Health is recomputed once the user finishes reviewing them.
             setRefactorProposals(reviewProposals)
             setPhase('refactoring')
+            setLoadingRefactor(false)
+            setLoadingRefactorEngine(false)
           } else {
             setRefactorProposals([])
-            setCompletionSource('review')
-            setPhase('complete')
+            setLoadingRefactorEngine(false)
+            void recomputeAfterApply(finalMap)
           }
-
-          setLoadingRefactor(false)
-          setLoadingRefactorEngine(false)
           return
         }
 
@@ -1399,17 +1494,34 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         setRequestError(event.data.error ?? 'Failed to analyze refactoring proposals.')
         setLoadingRefactorEngine(false)
         setLoadingRefactor(false)
-        setPhase('complete')
+        // Detector patches are already in baseMap — still recompute health.
+        if (autoApplyAll) {
+          void recomputeAfterApply(baseMap)
+        } else {
+          setPhase('complete')
+        }
       }
     }
 
-    refactorWorkerRef.current.postMessage({ files: serialized, options: { maxProposals: 12, guidelines: combinedGuidelines } })
+    refactorWorkerRef.current.postMessage({
+      files: serialized,
+      options: {
+        maxProposals: 12,
+        guidelines: combinedGuidelines,
+        rigor: engineSettings?.rigor,
+        formatting: engineSettings?.formatting,
+      },
+    })
 
     timeout = setTimeout(() => {
       console.warn('[refactor] Worker timeout — forcing complete')
-      setPhase('complete')
       setLoadingRefactor(false)
       setLoadingRefactorEngine(false)
+      if (autoApplyAll) {
+        void recomputeAfterApply(baseMap)
+      } else {
+        setPhase('complete')
+      }
     }, 60_000)
   }
 
@@ -1468,10 +1580,34 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
     setRequestError(null)
 
     try {
-      const changes: Array<{ filePath: string; newContent: string }> = []
-      for (const [path, content] of fileMap.entries()) {
-        changes.push({ filePath: path, newContent: content })
+      // Apply accepted issue patches to a copy of the fileMap, then send only
+      // the files that actually changed (vs. the current fileMap). Without this
+      // the PR would contain identical blobs and open with zero file changes.
+      const patchedMap = applyAcceptedPatches(fileMap, allIssues, decisions)
+
+      const changesByPath = new Map<string, { filePath: string; newContent: string }>()
+      for (const [path, content] of patchedMap.entries()) {
+        if (content !== fileMap.get(path)) {
+          const candidate = canonicalizePath(path)
+          if (!candidate.path || candidate.suspicious) {
+            throw new Error(`Invalid file path in PR payload: ${path}`)
+          }
+          changesByPath.set(candidate.path, { filePath: candidate.path, newContent: content })
+        }
       }
+      const changes = Array.from(changesByPath.values())
+
+      if (changes.length === 0) {
+        setRequestError(
+          lang === 'pt'
+            ? 'Nenhuma alteração para incluir no PR. Aceita issues com correção automática antes de criar o PR.'
+            : 'No changes to include in the PR. Accept issues with an automatic fix before creating the PR.',
+        )
+        return
+      }
+
+      // Keep local state in sync with what we're sending to GitHub.
+      setFileMap(patchedMap)
 
       const branchName = `refract/${Date.now()}`
       const title = `Refract: fix ${result.summary.total} quality issues`
@@ -1520,6 +1656,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
         after: proposal.after,
         newFiles: proposal.newFiles?.map((f) => ({ path: f.path, content: f.content })),
         fileMap: serialized,
+        sandboxValidation: engineSettings?.sandboxValidation,
       })
 
       setSafetyResults((prev) => ({ ...prev, [proposal.id]: result }))
@@ -1614,6 +1751,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({ projectId, onBack }) =
               analysisResult.scannedFiles,
               combinedGuidelines,
               lang,
+              engineSettings?.model,
             )
             setRequestError(null)
             setBriefingText(briefing ?? t('projectView.briefingFallback', {

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { runAIChat } from './_lib/ai'
+import { runAIChat, AIRateLimitError } from './_lib/ai'
 import { getAuthenticatedUserWithOptionalGitHub } from './_lib/auth'
 import { checkRateLimit, applyRateLimitHeaders } from './_lib/ratelimit'
 
@@ -90,6 +90,23 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
   }
 }
 
+/**
+ * Extract a small window of source around the issue instead of sending the
+ * whole file. This keeps each explain request well under the Groq TPM budget.
+ */
+function buildIssueContext(issue: any, fileSource: string | undefined): string {
+  // Prefer the detector's `before` lines — they're already the relevant snippet.
+  const beforeSnippet = issue?.lines?.before?.join('\n')
+  if (beforeSnippet && beforeSnippet.trim()) return beforeSnippet.slice(0, 1500)
+
+  if (!fileSource) return ''
+
+  const lines = fileSource.split('\n')
+  const start = Math.max(0, (issue?.lineStart ?? 1) - 1 - 25)
+  const end = Math.min(lines.length, (issue?.lineEnd ?? issue?.lineStart ?? 1) + 25)
+  return lines.slice(start, end).join('\n').slice(0, 1500)
+}
+
 async function handleExplain(req: VercelRequest, res: VercelResponse) {
   const { issue, fileSource, guidelines } = req.body
 
@@ -101,7 +118,7 @@ Sê direto — sem introduções nem conclusões genéricas.`
   const userPrompt = `Problema: ${issue.category} — ${issue.problem}
 Impacto: ${issue.impact}
 Contexto do ficheiro:
-${fileSource || issue.lines.before?.join('\n') || ''}
+${buildIssueContext(issue, fileSource)}
 ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
 
   try {
@@ -117,6 +134,10 @@ ${guidelines ? `\nGuidelines:\n${guidelines}` : ''}`
 
     return res.status(200).json({ explanation })
   } catch (err: any) {
+    if (err instanceof AIRateLimitError) {
+      res.setHeader('Retry-After', String(err.retryAfterSeconds))
+      return res.status(429).json({ error: err.message, reset: err.retryAfterSeconds })
+    }
     console.error('Explain error:', err)
     return res.status(500).json({ error: err.message || 'Failed to generate explanation' })
   }

@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getAuthenticatedUser } from './_lib/auth'
 import { githubRequest } from './_lib/github'
 import { checkRateLimit, applyRateLimitHeaders } from './_lib/ratelimit'
+import { canonicalizePath, normalizePath } from '../src/engine/path'
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
@@ -63,7 +64,9 @@ async function handleClone(token: string, repoUrl: string, branch?: string) {
     try {
       const contentData = await githubRequest(token, `/repos/${owner}/${repo}/contents/${file.path}?ref=${ref}`)
       if (contentData.content && contentData.encoding === 'base64') {
-        files[file.path] = Buffer.from(contentData.content, 'base64').toString('utf-8')
+        const normalizedPath = normalizePath(file.path)
+        if (!normalizedPath) continue
+        files[normalizedPath] = Buffer.from(contentData.content, 'base64').toString('utf-8')
       }
     } catch {
       // skip files that fail
@@ -92,11 +95,32 @@ async function handlePr(token: string, input: {
   changes: Array<{ filePath: string; newContent: string }>
 }) {
   const { owner, repo } = parseGitHubRepoUrl(input.repoUrl)
-  const changes = Array.from(new Map(input.changes.map((c) => [c.filePath, c])).values())
+  const canonicalChanges = input.changes.map(({ filePath, newContent }) => {
+    const result = canonicalizePath(filePath)
+    return { originalPath: filePath, canonicalPath: result.path, suspicious: result.suspicious, newContent }
+  })
+  const invalidChange = canonicalChanges.find((change) => !change.canonicalPath || change.suspicious)
+  if (invalidChange) {
+    throw new Error(`Invalid file path in PR payload: ${invalidChange.originalPath}`)
+  }
+
+  const changes = Array.from(
+    new Map(
+      canonicalChanges.map((change) => [
+        change.canonicalPath,
+        { filePath: change.canonicalPath, newContent: change.newContent },
+      ]),
+    ).values(),
+  )
+
+  if (changes.length === 0) {
+    throw new Error('No changes to commit')
+  }
 
   const baseRef = await githubRequest(token, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(input.baseBranch)}`)
   const baseCommitSha = baseRef.object.sha
   const baseCommit = await githubRequest(token, `/repos/${owner}/${repo}/git/commits/${baseCommitSha}`)
+  console.log(`[github/pr] ${owner}/${repo}: base ${input.baseBranch}@${baseCommitSha.slice(0, 7)}, ${changes.length} file(s)`)
 
   const blobs = await Promise.all(
     changes.map(async ({ filePath, newContent }) => {
@@ -110,11 +134,20 @@ async function handlePr(token: string, input: {
       return { path: filePath, mode: '100644', type: 'blob', sha: blob.sha }
     })
   )
+  console.log(`[github/pr] created ${blobs.length} blob(s)`)
 
   const tree = await githubRequest(token, `/repos/${owner}/${repo}/git/trees`, {
     method: 'POST',
     body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: blobs }),
   })
+
+  // If the resulting tree is identical to base, the commit would be empty.
+  // Abort rather than opening a PR with zero file changes.
+  if (tree.sha === baseCommit.tree.sha) {
+    console.warn(`[github/pr] tree identical to base (${tree.sha.slice(0, 7)}) — no effective changes`)
+    throw new Error('No effective changes — the proposed files match the base branch')
+  }
+  console.log(`[github/pr] tree ${tree.sha.slice(0, 7)}`)
 
   const commit = await githubRequest(token, `/repos/${owner}/${repo}/git/commits`, {
     method: 'POST',
@@ -124,11 +157,13 @@ async function handlePr(token: string, input: {
       parents: [baseCommitSha],
     }),
   })
+  console.log(`[github/pr] commit ${commit.sha.slice(0, 7)}`)
 
   await githubRequest(token, `/repos/${owner}/${repo}/git/refs`, {
     method: 'POST',
     body: JSON.stringify({ ref: `refs/heads/${input.headBranch}`, sha: commit.sha }),
   })
+  console.log(`[github/pr] pushed branch ${input.headBranch}`)
 
   const pr = await githubRequest(token, `/repos/${owner}/${repo}/pulls`, {
     method: 'POST',
@@ -139,6 +174,7 @@ async function handlePr(token: string, input: {
       base: input.baseBranch,
     }),
   })
+  console.log(`[github/pr] opened PR ${pr.html_url}`)
 
   return { url: pr.html_url }
 }

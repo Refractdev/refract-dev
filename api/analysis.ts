@@ -3,6 +3,7 @@ import { getAdminSupabaseClient } from './_lib/supabase'
 import { getAuthenticatedUser } from './_lib/auth'
 import { analyzeDrift, type SnapshotData } from './_lib/drift'
 import { runAnalysis } from '../src/lib/analyze'
+import { canonicalizeEntries } from '../src/engine/path'
 import { throwIfDbError } from './_lib/db'
 import { cloneRepo } from './_lib/clone'
 
@@ -138,7 +139,14 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
     let files: Record<string, string>
 
     if (preFetchedFiles) {
-      files = preFetchedFiles
+      const prefetchedEntries = Object.entries(preFetchedFiles as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string',
+      )
+      const { map, collisions } = canonicalizeEntries(prefetchedEntries)
+      if (collisions.length > 0) {
+        console.warn(`[analysis/run] normalized ${collisions.length} duplicate prefetched path(s)`)
+      }
+      files = Object.fromEntries(map.entries())
     } else if (repoUrl) {
       const validationError = validateRepoUrl(repoUrl)
       if (validationError) {
@@ -160,7 +168,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
     })
 
     // ── Run analysis ────────────────────────────────────────────────────────
-    const fileMap = new Map(Object.entries(files))
+    const { map: fileMap } = canonicalizeEntries(Object.entries(files))
     const result = await runAnalysis(fileMap)
 
     // ── Compute category breakdown ──────────────────────────────────────────
